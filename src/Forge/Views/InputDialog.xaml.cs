@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows;
+using Wpf.Ui.Controls;
 
 namespace Forge.Views;
 
@@ -10,7 +11,13 @@ namespace Forge.Views;
 // isn't in the list yet); omit it and it behaves like a plain text prompt.
 // Pass `onRefresh` to show a Refresh button that re-runs it and repopulates
 // the list in place (used to re-fetch just this one submodule's branches).
-public partial class InputDialog : Window
+//
+// Must be a FluentWindow, not a plain Window -- a plain Window never gets
+// WPF-UI's theme resources applied to it (that happens per-window via
+// FluentWindow/SystemThemeWatcher), so its controls would pick up
+// theme-aware foreground colors from the merged dictionaries while the
+// window itself stayed at the OS default white background: white-on-white.
+public partial class InputDialog : FluentWindow
 {
     private readonly Func<Task<List<string>>>? _onRefresh;
 

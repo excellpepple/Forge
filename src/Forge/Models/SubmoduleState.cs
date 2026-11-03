@@ -30,16 +30,18 @@ public sealed class SubmoduleState
     public string ShortHead => Short(Head);
     private static string Short(string? sha) => string.IsNullOrEmpty(sha) ? "-" : sha[..Math.Min(8, sha.Length)];
 
-    public string BranchDisplay
-    {
-        get
-        {
-            var current = CurrentBranch ?? "(detached)";
-            return !string.IsNullOrEmpty(DeclaredBranch) && DeclaredBranch != CurrentBranch
-                ? $"{current}  [pinned: {DeclaredBranch}]"
-                : current;
-        }
-    }
+    // Split into two lines rather than one long string -- a combined
+    // "branch [pinned: X]" line overflows its column for anything but short
+    // branch names. The UI renders BranchName and PinnedAnnotation as two
+    // separate, differently-styled lines instead.
+    public string BranchName => CurrentBranch ?? "(detached)";
+
+    // Empty string rather than null so XAML can bind it directly without a
+    // null-to-Visibility converter -- an empty second line just reads blank.
+    public string PinnedAnnotation =>
+        !string.IsNullOrEmpty(DeclaredBranch) && DeclaredBranch != CurrentBranch
+            ? $"pinned: {DeclaredBranch}"
+            : "";
 }
 
 // A node in the submodule tree the Submodules tab binds to. Get-SubmoduleStates

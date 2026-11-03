@@ -2,15 +2,18 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using Forge.Models;
 
 namespace Forge.Services;
 
-// Global, machine-level app state: which projects have been opened here.
-// Distinct from the per-project Tools\.workflow-local.json (watch-branch
-// choices etc.), which travels with the repo checkout, not the app install.
+// Global, machine-level app state: which projects have been opened here, and
+// how Forge itself looks. Distinct from the per-project
+// Tools\.workflow-local.json (watch-branch choices etc.), which travels with
+// the repo checkout, not the app install.
 public sealed class AppSettings
 {
     public List<string> RecentProjects { get; set; } = new();
+    public ThemeSettings Theme { get; set; } = new();
 }
 
 public static class AppSettingsService

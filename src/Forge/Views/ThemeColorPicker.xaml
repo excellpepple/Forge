@@ -1,0 +1,5 @@
+<UserControl x:Class="Forge.Views.ThemeColorPicker"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel x:Name="SwatchPanel" Orientation="Horizontal" VerticalAlignment="Center"/>
+</UserControl>

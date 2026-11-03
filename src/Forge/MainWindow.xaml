@@ -1,162 +1,405 @@
-﻿<Window x:Class="Forge.MainWindow"
+﻿<ui:FluentWindow x:Class="Forge.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:views="clr-namespace:Forge.Views"
         mc:Ignorable="d"
-        Title="Forge" Height="720" Width="1150" MinHeight="500" MinWidth="800">
-    <DockPanel>
+        Title="Forge" Height="720" Width="1150" MinHeight="500" MinWidth="800"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica"
+        WindowCornerPreference="Round"
+        Background="{DynamicResource ForgeBackgroundBrush}">
 
-        <!-- Project bar -->
-        <Border DockPanel.Dock="Top" Padding="10" Background="#FF2D2D30">
-            <StackPanel Orientation="Horizontal">
-                <Button x:Name="OpenProjectButton" Content="Open Project..." Padding="10,4" Margin="0,0,8,0"
-                        Click="OpenProjectButton_Click"
-                        ToolTip="Pick a folder containing Tools\ProjectWorkflow.psm1 and project.config.json."/>
-                <ComboBox x:Name="RecentProjectsCombo" Width="340" Margin="0,0,12,0"
-                          SelectionChanged="RecentProjectsCombo_SelectionChanged"
-                          ToolTip="Projects you've opened before. Pick one to reopen it."/>
-                <TextBlock x:Name="ProjectTitleText" VerticalAlignment="Center" FontWeight="Bold" Foreground="White" Text="No project open"/>
-            </StackPanel>
-        </Border>
+    <ui:FluentWindow.Resources>
+        <Style x:Key="NavButtonStyle" TargetType="Button">
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Padding" Value="14,9"/>
+            <Setter Property="Margin" Value="8,1"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="SegButtonStyle" TargetType="Button">
+            <Setter Property="Padding" Value="14,6"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlElevationBorderBrush}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style x:Key="ToolbarButtonStyle" TargetType="Button">
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource ForgeAccentBrush}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ToolbarCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlElevationBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="8,6"/>
+        </Style>
+
+        <ContextMenu x:Key="SubmoduleContextMenu">
+            <MenuItem Header="Switch Branch..." Click="SwitchBranchButton_Click">
+                <MenuItem.Icon><ui:SymbolIcon Symbol="ArrowSwap24" Foreground="{DynamicResource ForgeAccentBrush}"/></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="Set Watch Branch..." Click="SetWatchBranchButton_Click">
+                <MenuItem.Icon><ui:SymbolIcon Symbol="Eye24" Foreground="{DynamicResource ForgeAccentBrush}"/></MenuItem.Icon>
+            </MenuItem>
+            <Separator/>
+            <MenuItem Header="Check for Updates" Click="CheckUpdatesButton_Click">
+                <MenuItem.Icon><ui:SymbolIcon Symbol="Alert24" Foreground="{DynamicResource ForgeAccentBrush}"/></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="Refresh Branch Lists" Click="RefreshBranchListsButton_Click">
+                <MenuItem.Icon><ui:SymbolIcon Symbol="CloudArrowDown24" Foreground="{DynamicResource ForgeAccentBrush}"/></MenuItem.Icon>
+            </MenuItem>
+            <Separator/>
+            <MenuItem Header="Refresh" Click="RefreshSubmodulesButton_Click">
+                <MenuItem.Icon><ui:SymbolIcon Symbol="ArrowSync24" Foreground="{DynamicResource ForgeAccentBrush}"/></MenuItem.Icon>
+            </MenuItem>
+        </ContextMenu>
+        <Style x:Key="SubmoduleTreeItemStyle" TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
+            <Setter Property="ContextMenu" Value="{StaticResource SubmoduleContextMenu}"/>
+            <!-- Bubbling, not the tunneling Preview version: bubbling starts
+                 at the actual clicked (innermost) item and works outward, so
+                 that item's handler runs, and marks Handled, before the
+                 event ever reaches a parent's handler. The tunneling Preview
+                 version runs parent first, which is why right-clicking a
+                 nested submodule was selecting its parent instead. -->
+            <EventSetter Event="MouseRightButtonDown" Handler="SubmoduleTreeItem_MouseRightButtonDown"/>
+        </Style>
+    </ui:FluentWindow.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" x:Name="AppTitleBar" Title="Forge">
+            <ui:TitleBar.Icon>
+                <ui:SymbolIcon Symbol="Fire24" Foreground="{DynamicResource ForgeAccentBrush}"/>
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
 
         <!-- Failure banner -->
-        <Border x:Name="FailBanner" DockPanel.Dock="Top" Background="#FFB71C1C" Padding="10" Visibility="Collapsed">
+        <Border x:Name="FailBanner" Grid.Row="1" Background="{DynamicResource ForgeDangerFillBrush}" Padding="10" Visibility="Collapsed">
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="Dismiss" Padding="8,2" Click="DismissBanner_Click"
                         ToolTip="Hide this message. It doesn't undo anything -- the operation already stopped safely."/>
-                <TextBlock x:Name="FailBannerText" TextWrapping="Wrap" Foreground="White" FontWeight="Bold"/>
+                <TextBlock x:Name="FailBannerText" TextWrapping="Wrap" Foreground="{DynamicResource ForgeOnDangerBrush}" FontWeight="Bold"/>
             </DockPanel>
         </Border>
 
-        <TabControl x:Name="MainTabs" IsEnabled="False">
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="188"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
 
-            <TabItem Header="Overview" ToolTip="Project summary and the two things you'll do most often.">
-                <StackPanel Margin="20">
-                    <TextBlock x:Name="OverviewTitle" FontSize="20" FontWeight="Bold" Text="No project open"/>
-                    <TextBlock x:Name="OverviewRoot" Margin="0,4,0,20" Opacity="0.7"/>
-                    <TextBlock x:Name="OverviewBranch" Margin="0,0,0,4"
-                               ToolTip="The branch this project's pins (which versions of the engine/game/art go together) are read from."/>
-                    <TextBlock x:Name="OverviewEditorTarget" Margin="0,0,0,4"
-                               ToolTip="The Unreal build target Forge compiles when you click Build."/>
-                    <TextBlock x:Name="OverviewUProject" Margin="0,0,0,20"
-                               ToolTip="The .uproject file this build opens once it's done."/>
-                    <StackPanel Orientation="Horizontal">
-                        <Button x:Name="QuickSyncButton" Content="Sync" Width="130" Height="34" Margin="0,0,10,0" Click="QuickSyncButton_Click"
-                                ToolTip="Get everyone's latest work: updates the engine, game, art and plugins to the versions the team pinned together. Safe -- refuses if you have unsaved changes in the way."/>
-                        <Button x:Name="QuickBuildButton" Content="Build &amp; Launch" Width="160" Height="34" Click="QuickBuildButton_Click"
-                                ToolTip="Build the editor with default options and open it when done. For more control, use the Build tab."/>
+            <!-- Sidebar -->
+            <Border Grid.Column="0" Background="{DynamicResource ForgeSidebarBackgroundBrush}">
+                <DockPanel>
+                    <!-- Bottom of the sidebar, added in bottom-to-top visual order:
+                         Settings pinned at the very bottom, project switcher just above it. -->
+                    <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,8">
+                        <Button x:Name="SettingsNavButton" Style="{StaticResource NavButtonStyle}" Click="NavButton_Click" Tag="Settings">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon x:Name="SettingsNavIcon" Symbol="Settings24" Margin="0,0,10,0"/>
+                                <TextBlock x:Name="SettingsNavLabel" Text="Settings"/>
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
-                </StackPanel>
-            </TabItem>
 
-            <TabItem Header="Submodules" ToolTip="Every engine/game/art/plugin repo this project is made of, and their branches.">
-                <DockPanel Margin="20">
-                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,12">
-                        <Button x:Name="RefreshSubmodulesButton" Content="Refresh" Padding="10,4" Margin="0,0,8,0" Click="RefreshSubmodulesButton_Click"
-                                ToolTip="Re-read the current state of every submodule from disk."/>
-                        <Button x:Name="SwitchBranchButton" Content="Switch Branch..." Padding="10,4" Margin="0,0,8,0" Click="SwitchBranchButton_Click"
-                                ToolTip="Switch the selected submodule to a different branch. Also updates whatever is nested inside it to match that branch. Refuses if there's unsaved work in the way."/>
-                        <Button x:Name="SetWatchBranchButton" Content="Set Watch Branch..." Padding="10,4" Margin="0,0,8,0" Click="SetWatchBranchButton_Click"
-                                ToolTip="Pick a branch to watch for new commits on the selected submodule -- separate from the pinned branch, and purely informational. Doesn't change anything on disk."/>
-                        <Button x:Name="CheckUpdatesButton" Content="Check for Updates" Padding="10,4" Margin="0,0,8,0" Click="CheckUpdatesButton_Click"
-                                ToolTip="Check every watched branch for new commits upstream. Just reports -- never changes anything."/>
-                        <Button x:Name="RefreshBranchListsButton" Content="Refresh Branch Lists" Padding="10,4" Click="RefreshBranchListsButton_Click"
-                                ToolTip="Re-fetch the list of available branches from origin for every submodule, in the background. Forge also does this automatically on open and periodically. To refresh just one submodule, use the Refresh button inside the branch picker."/>
-                        <TextBlock x:Name="BranchRefreshStatusText" VerticalAlignment="Center" Margin="12,0,0,0" Opacity="0.7"/>
+                    <StackPanel DockPanel.Dock="Bottom" Margin="10,10,10,10">
+                        <TextBlock x:Name="ProjectTitleText" Margin="2,0,0,8" FontWeight="Medium" TextTrimming="CharacterEllipsis" Text="No project open"/>
+                        <Button x:Name="OpenProjectButton" Content="Open Project..." Padding="10,6" Margin="0,0,0,8"
+                                Click="OpenProjectButton_Click" HorizontalAlignment="Stretch"
+                                ToolTip="Pick a folder containing Tools\ProjectWorkflow.psm1 and project.config.json."/>
+                        <ComboBox x:Name="RecentProjectsCombo" HorizontalAlignment="Stretch"
+                                  SelectionChanged="RecentProjectsCombo_SelectionChanged"
+                                  ToolTip="Projects you've opened before. Pick one to reopen it."/>
                     </StackPanel>
-                    <TreeView x:Name="SubmodulesTree" SelectedItemChanged="SubmodulesTree_SelectedItemChanged"
-                              ToolTip="Select a submodule here, then use the buttons above.">
-                        <TreeView.ItemTemplate>
-                            <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                <StackPanel Orientation="Horizontal" Margin="0,2">
-                                    <TextBlock Text="{Binding Name}" FontWeight="Bold" Width="200"
-                                               ToolTip="{Binding State.Path}"/>
-                                    <TextBlock Text="{Binding State.State}" Width="90" Foreground="{Binding StateBrush}"
-                                               ToolTip="Match: on the pinned commit. Ahead: newer than the pin (normal mid-work). Behind/Diverged/Missing: needs a Sync."/>
-                                    <TextBlock Text="{Binding State.BranchDisplay}" Width="220"
-                                               ToolTip="The branch actually checked out. '[pinned: X]' shows if that differs from what's pinned."/>
-                                    <TextBlock Text="{Binding State.ShortHead}" Width="80" Opacity="0.7" FontFamily="Consolas"
-                                               ToolTip="Short commit hash currently checked out."/>
-                                    <TextBlock Text="{Binding WatchInfo}" Opacity="0.7"/>
-                                </StackPanel>
-                            </HierarchicalDataTemplate>
-                        </TreeView.ItemTemplate>
-                    </TreeView>
+
+                    <StackPanel DockPanel.Dock="Top">
+                        <Button x:Name="OverviewNavButton" Style="{StaticResource NavButtonStyle}" Click="NavButton_Click" Tag="Overview" IsEnabled="False"
+                                ToolTip="Project summary and the two things you'll do most often.">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon x:Name="OverviewNavIcon" Symbol="Home24" Margin="0,0,10,0"/>
+                                <TextBlock x:Name="OverviewNavLabel" Text="Overview"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="SubmodulesNavButton" Style="{StaticResource NavButtonStyle}" Click="NavButton_Click" Tag="Submodules" IsEnabled="False"
+                                ToolTip="Every engine/game/art/plugin repo this project is made of, and their branches.">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon x:Name="SubmodulesNavIcon" Symbol="BranchFork24" Margin="0,0,10,0"/>
+                                <TextBlock x:Name="SubmodulesNavLabel" Text="Submodules"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="BuildNavButton" Style="{StaticResource NavButtonStyle}" Click="NavButton_Click" Tag="Build" IsEnabled="False"
+                                ToolTip="Sync a subset of submodules, and control how the editor gets built.">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon x:Name="BuildNavIcon" Symbol="Wrench24" Margin="0,0,10,0"/>
+                                <TextBlock x:Name="BuildNavLabel" Text="Build"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="LogNavButton" Style="{StaticResource NavButtonStyle}" Click="NavButton_Click" Tag="Log" IsEnabled="False"
+                                ToolTip="Live output from whatever Forge is running right now.">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon x:Name="LogNavIcon" Symbol="DocumentText24" Margin="0,0,10,0"/>
+                                <TextBlock x:Name="LogNavLabel" Text="Log"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="HelpNavButton" Style="{StaticResource NavButtonStyle}" Click="NavButton_Click" Tag="Help"
+                                ToolTip="Documentation for the open project, and for Forge itself.">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon x:Name="HelpNavIcon" Symbol="QuestionCircle24" Margin="0,0,10,0"/>
+                                <TextBlock x:Name="HelpNavLabel" Text="Help"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
                 </DockPanel>
-            </TabItem>
+            </Border>
 
-            <TabItem Header="Build" ToolTip="Sync a subset of submodules, and control how the editor gets built.">
-                <StackPanel Margin="20">
-                    <TextBlock Text="Sync" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
-                    <RadioButton x:Name="SyncAllRadio" Content="Sync everything (recommended)" GroupName="SyncScope" IsChecked="True" Margin="0,0,0,6"
-                                 ToolTip="The same full sync as the Overview tab's Sync button and Sync.bat."/>
-                    <RadioButton x:Name="SyncSelectedRadio" Content="Sync only the selected submodule(s) below" GroupName="SyncScope" Margin="0,0,0,6"
-                                 ToolTip="Update just these top-level submodules (e.g. only the engine) instead of everything. Faster when you know only one piece changed."/>
-                    <ListBox x:Name="SyncSubmodulesList" SelectionMode="Multiple" Height="90" Margin="24,0,0,10"
-                             ToolTip="Ctrl-click or Shift-click to select more than one."/>
-                    <Button x:Name="RunSyncButton" Content="Run Sync" Width="140" Height="30" HorizontalAlignment="Left" Margin="0,0,0,28" Click="RunSyncButton_Click"
-                            ToolTip="Run the sync scope chosen above."/>
+            <!-- Content -->
+            <Grid Grid.Column="1">
 
-                    <TextBlock Text="Build" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
-                    <CheckBox x:Name="NoBuildCheck" Content="No build -- just launch the editor" Margin="0,0,0,6"
-                              ToolTip="Skip compiling and open the editor immediately. Only safe if nothing changed in C++ since your last build."/>
-                    <CheckBox x:Name="BuildOnlyCheck" Content="Build only -- don't launch the editor" Margin="0,0,0,6"
-                              ToolTip="Compile but don't open the editor afterward."/>
-                    <CheckBox x:Name="RebuildCheck" Content="Full rebuild (slow -- discards incremental progress)" Margin="0,0,0,6"
-                              ToolTip="Force a clean rebuild from scratch. Normally unnecessary and much slower -- use only if an incremental build is behaving strangely."/>
-                    <CheckBox x:Name="SkipSyncCheckCheck" Content="Skip the pinned-version check" Margin="0,0,0,10"
-                              ToolTip="Build even if this copy doesn't match what the team pinned. For developers deliberately building an unpinned combination."/>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
-                        <TextBlock Text="Configuration:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <ComboBox x:Name="ConfigurationCombo" Width="150" SelectedIndex="0"
-                                  ToolTip="Development is what you want unless you're debugging engine code.">
-                            <ComboBoxItem Content="Development"/>
-                            <ComboBoxItem Content="DebugGame"/>
-                            <ComboBoxItem Content="Debug"/>
-                        </ComboBox>
+                <Grid x:Name="OverviewPage" Visibility="Collapsed" Margin="24">
+                    <StackPanel VerticalAlignment="Top">
+                        <TextBlock x:Name="OverviewTitle" FontSize="20" FontWeight="Bold" Text="No project open"/>
+                        <TextBlock x:Name="OverviewRoot" Margin="0,4,0,20" Opacity="0.7"/>
+                        <TextBlock x:Name="OverviewBranch" Margin="0,0,0,4"
+                                   ToolTip="The branch this project's pins (which versions of the engine/game/art go together) are read from."/>
+                        <TextBlock x:Name="OverviewEditorTarget" Margin="0,0,0,4"
+                                   ToolTip="The Unreal build target Forge compiles when you click Build."/>
+                        <TextBlock x:Name="OverviewUProject" Margin="0,0,0,20"
+                                   ToolTip="The .uproject file this build opens once it's done."/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="QuickSyncButton" Content="Sync" Width="130" Height="34" Margin="0,0,10,0" Click="QuickSyncButton_Click"
+                                    ToolTip="Get everyone's latest work: updates the engine, game, art and plugins to the versions the team pinned together. Safe -- refuses if you have unsaved changes in the way."/>
+                            <Button x:Name="QuickBuildButton" Content="Build &amp; Launch" Width="160" Height="34" Click="QuickBuildButton_Click"
+                                    Background="{DynamicResource ForgeAccentBrush}" Foreground="{DynamicResource ForgeOnAccentBrush}"
+                                    ToolTip="Build the editor with default options and open it when done. For more control, use the Build tab."/>
+                        </StackPanel>
                     </StackPanel>
-                    <Button x:Name="RunBuildButton" Content="Run Build" Width="140" Height="30" HorizontalAlignment="Left" Click="RunBuildButton_Click"
-                            ToolTip="Build (and launch, unless 'Build only' is checked) with the options above."/>
-                </StackPanel>
-            </TabItem>
+                </Grid>
 
-            <TabItem Header="Log" ToolTip="Live output from whatever Forge is running right now.">
-                <DockPanel Margin="12">
-                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                        <Button x:Name="ClearLogButton" Content="Clear" Padding="10,4" Click="ClearLogButton_Click"
-                                ToolTip="Clear this log view. Doesn't affect anything that already happened."/>
+                <Grid x:Name="SubmodulesPage" Visibility="Collapsed" Margin="24">
+                    <DockPanel>
+                        <Border DockPanel.Dock="Top" Style="{StaticResource ToolbarCardStyle}" Margin="0,0,0,14">
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="RefreshSubmodulesButton" Style="{StaticResource ToolbarButtonStyle}" Click="RefreshSubmodulesButton_Click"
+                                        ToolTip="Re-read the current state of every submodule from disk.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="ArrowSync24" Margin="0,0,6,0" Foreground="{DynamicResource ForgeAccentBrush}"/>
+                                        <TextBlock Text="Refresh"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="SwitchBranchButton" Style="{StaticResource ToolbarButtonStyle}" Click="SwitchBranchButton_Click"
+                                        ToolTip="Switch the selected submodule to a different branch. Also updates whatever is nested inside it to match that branch. Refuses if there's unsaved work in the way.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="ArrowSwap24" Margin="0,0,6,0" Foreground="{DynamicResource ForgeAccentBrush}"/>
+                                        <TextBlock Text="Switch Branch..."/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="SetWatchBranchButton" Style="{StaticResource ToolbarButtonStyle}" Click="SetWatchBranchButton_Click"
+                                        ToolTip="Pick a branch to watch for new commits on the selected submodule -- separate from the pinned branch, and purely informational. Doesn't change anything on disk.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="Eye24" Margin="0,0,6,0" Foreground="{DynamicResource ForgeAccentBrush}"/>
+                                        <TextBlock Text="Set Watch Branch..."/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="CheckUpdatesButton" Style="{StaticResource ToolbarButtonStyle}" Click="CheckUpdatesButton_Click"
+                                        ToolTip="Check every watched branch for new commits upstream. Just reports -- never changes anything.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="Alert24" Margin="0,0,6,0" Foreground="{DynamicResource ForgeAccentBrush}"/>
+                                        <TextBlock Text="Check for Updates"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="RefreshBranchListsButton" Style="{StaticResource ToolbarButtonStyle}" Click="RefreshBranchListsButton_Click"
+                                        ToolTip="Re-fetch the list of available branches from origin for every submodule, in the background. Forge also does this automatically on open and periodically. To refresh just one submodule, use the Refresh button inside the branch picker.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="CloudArrowDown24" Margin="0,0,6,0" Foreground="{DynamicResource ForgeAccentBrush}"/>
+                                        <TextBlock Text="Refresh Branch Lists"/>
+                                    </StackPanel>
+                                </Button>
+                                <TextBlock x:Name="BranchRefreshStatusText" VerticalAlignment="Center" Margin="10,0,0,0" Opacity="0.7"/>
+                            </StackPanel>
+                        </Border>
+                        <TreeView x:Name="SubmodulesTree" SelectedItemChanged="SubmodulesTree_SelectedItemChanged"
+                                  ItemContainerStyle="{StaticResource SubmoduleTreeItemStyle}"
+                                  ToolTip="Select a submodule, then use the toolbar above or right-click for the same options.">
+                            <TreeView.ItemTemplate>
+                                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                                        <TextBlock Text="{Binding Name}" FontWeight="Bold" Width="190" Margin="0,0,14,0"
+                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding State.Path}"/>
+                                        <TextBlock Text="{Binding State.State}" Width="80" Margin="0,0,14,0"
+                                                   VerticalAlignment="Center" Foreground="{Binding StateBrush}"
+                                                   ToolTip="Match: on the pinned commit. Ahead: newer than the pin (normal mid-work). Behind/Diverged/Missing: needs a Sync."/>
+                                        <StackPanel Width="280" Margin="0,0,14,0" VerticalAlignment="Center"
+                                                    ToolTip="The branch actually checked out. The 'pinned:' line (if shown) is what the team's pin expects instead.">
+                                            <TextBlock Text="{Binding State.BranchName}" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding State.PinnedAnnotation}" FontSize="11" Opacity="0.65" TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding State.ShortHead}" Width="80" Margin="0,0,14,0"
+                                                   VerticalAlignment="Center" Opacity="0.7" FontFamily="Consolas"
+                                                   ToolTip="Short commit hash currently checked out."/>
+                                        <TextBlock Text="{Binding WatchInfo}" VerticalAlignment="Center" Opacity="0.7"/>
+                                    </StackPanel>
+                                </HierarchicalDataTemplate>
+                            </TreeView.ItemTemplate>
+                        </TreeView>
+                    </DockPanel>
+                </Grid>
+
+                <Grid x:Name="BuildPage" Visibility="Collapsed" Margin="24">
+                    <StackPanel VerticalAlignment="Top">
+                        <TextBlock Text="Sync" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
+                        <RadioButton x:Name="SyncAllRadio" Content="Sync everything (recommended)" GroupName="SyncScope" IsChecked="True" Margin="0,0,0,6"
+                                     ToolTip="The same full sync as the Overview tab's Sync button and Sync.bat."/>
+                        <RadioButton x:Name="SyncSelectedRadio" Content="Sync only the selected submodule(s) below" GroupName="SyncScope" Margin="0,0,0,6"
+                                     ToolTip="Update just these top-level submodules (e.g. only the engine) instead of everything. Faster when you know only one piece changed."/>
+                        <Border Margin="24,0,0,10" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="6">
+                            <ListBox x:Name="SyncSubmodulesList" SelectionMode="Multiple" Height="90" BorderThickness="0"
+                                     ToolTip="Ctrl-click or Shift-click to select more than one."/>
+                        </Border>
+                        <Button x:Name="RunSyncButton" Content="Run Sync" Width="140" Height="30" HorizontalAlignment="Left" Margin="0,0,0,28" Click="RunSyncButton_Click"
+                                ToolTip="Run the sync scope chosen above."/>
+
+                        <TextBlock Text="Build" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
+                        <CheckBox x:Name="NoBuildCheck" Content="No build -- just launch the editor" Margin="0,0,0,6"
+                                  ToolTip="Skip compiling and open the editor immediately. Only safe if nothing changed in C++ since your last build."/>
+                        <CheckBox x:Name="BuildOnlyCheck" Content="Build only -- don't launch the editor" Margin="0,0,0,6"
+                                  ToolTip="Compile but don't open the editor afterward."/>
+                        <CheckBox x:Name="RebuildCheck" Content="Full rebuild (slow -- discards incremental progress)" Margin="0,0,0,6"
+                                  ToolTip="Force a clean rebuild from scratch. Normally unnecessary and much slower -- use only if an incremental build is behaving strangely."/>
+                        <CheckBox x:Name="SkipSyncCheckCheck" Content="Skip the pinned-version check" Margin="0,0,0,10"
+                                  ToolTip="Build even if this copy doesn't match what the team pinned. For developers deliberately building an unpinned combination."/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                            <TextBlock Text="Configuration:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <ComboBox x:Name="ConfigurationCombo" Width="150" SelectedIndex="0"
+                                      ToolTip="Development is what you want unless you're debugging engine code.">
+                                <ComboBoxItem Content="Development"/>
+                                <ComboBoxItem Content="DebugGame"/>
+                                <ComboBoxItem Content="Debug"/>
+                            </ComboBox>
+                        </StackPanel>
+                        <Button x:Name="RunBuildButton" Content="Run Build" Width="140" Height="30" HorizontalAlignment="Left" Click="RunBuildButton_Click"
+                                Background="{DynamicResource ForgeAccentBrush}" Foreground="{DynamicResource ForgeOnAccentBrush}"
+                                ToolTip="Build (and launch, unless 'Build only' is checked) with the options above."/>
                     </StackPanel>
-                    <TextBox x:Name="LogText" IsReadOnly="True" FontFamily="Consolas" FontSize="12"
-                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                             TextWrapping="NoWrap" Background="#FF1E1E1E" Foreground="#FFDCDCDC"/>
-                </DockPanel>
-            </TabItem>
+                </Grid>
 
-            <TabItem Header="Help" ToolTip="Documentation for the open project, and for Forge itself.">
-                <DockPanel Margin="12">
-                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                        <TextBlock Text="Doc:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <ComboBox x:Name="HelpDocCombo" Width="280" Margin="0,0,8,0" SelectionChanged="HelpDocCombo_SelectionChanged"
-                                  ToolTip="Project docs come from the open project's own config; Forge docs explain this app.">
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding DisplayText}" FontWeight="{Binding Weight}"/>
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
-                        <Button x:Name="OpenExternalDocButton" Content="Open" Padding="10,4" Click="OpenExternalDocButton_Click" Visibility="Collapsed"
-                                ToolTip="Open this document in its own viewer (e.g. a PDF reader)."/>
+                <Grid x:Name="LogPage" Visibility="Collapsed" Margin="16">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                            <Button x:Name="ClearLogButton" Content="Clear" Padding="10,4" Click="ClearLogButton_Click"
+                                    ToolTip="Clear this log view. Doesn't affect anything that already happened."/>
+                        </StackPanel>
+                        <TextBox x:Name="LogText" IsReadOnly="True" FontFamily="Consolas" FontSize="12"
+                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                 TextWrapping="NoWrap"
+                                 Background="{DynamicResource ForgeSidebarBackgroundBrush}"
+                                 Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    </DockPanel>
+                </Grid>
+
+                <Grid x:Name="HelpPage" Visibility="Collapsed" Margin="16">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                            <TextBlock Text="Doc:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <ComboBox x:Name="HelpDocCombo" Width="280" Margin="0,0,8,0" SelectionChanged="HelpDocCombo_SelectionChanged"
+                                      ToolTip="Project docs come from the open project's own config; Forge docs explain this app.">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DisplayText}" FontWeight="{Binding Weight}"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <Button x:Name="OpenExternalDocButton" Content="Open" Padding="10,4" Click="OpenExternalDocButton_Click" Visibility="Collapsed"
+                                    ToolTip="Open this document in its own viewer (e.g. a PDF reader)."/>
+                        </StackPanel>
+                        <Grid>
+                            <wv2:WebView2 x:Name="HelpWebView"/>
+                            <TextBox x:Name="HelpFallbackText" IsReadOnly="True" FontFamily="Consolas" FontSize="12"
+                                     VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" Visibility="Collapsed"/>
+                        </Grid>
+                    </DockPanel>
+                </Grid>
+
+                <Grid x:Name="SettingsPage" Visibility="Collapsed" Margin="24">
+                    <StackPanel VerticalAlignment="Top" MaxWidth="560" HorizontalAlignment="Left">
+                        <TextBlock Text="Settings" FontSize="20" FontWeight="Bold" Margin="0,0,0,12"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
+                            <TextBlock x:Name="ThemeSubTab" Text="Theme" FontWeight="Medium" Margin="0,0,20,0"
+                                       Foreground="{DynamicResource ForgeAccentBrush}"/>
+                            <TextBlock Text="General" Opacity="0.4" ToolTip="More settings coming later."/>
+                        </StackPanel>
+
+                        <TextBlock Text="Mode" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                            <Button x:Name="ModeLightButton" Content="Light" Style="{StaticResource SegButtonStyle}" Click="ModeButton_Click" Tag="Light"/>
+                            <Button x:Name="ModeDarkButton" Content="Dark" Style="{StaticResource SegButtonStyle}" Click="ModeButton_Click" Tag="Dark"/>
+                            <Button x:Name="ModeSystemButton" Content="System" Style="{StaticResource SegButtonStyle}" Click="ModeButton_Click" Tag="System"/>
+                        </StackPanel>
+
+                        <TextBlock Text="LIGHT MODE" FontSize="11" Opacity="0.6" Margin="0,0,0,10"/>
+                        <TextBlock Text="Accent" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
+                        <views:ThemeColorPicker x:Name="LightAccentPicker" Margin="0,0,0,14"/>
+                        <TextBlock Text="Background" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
+                        <views:ThemeColorPicker x:Name="LightBackgroundPicker" Margin="0,0,0,14"/>
+                        <TextBlock Text="Icon color" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
+                        <views:ThemeColorPicker x:Name="LightIconPicker" Margin="0,0,0,20"/>
+
+                        <TextBlock Text="DARK MODE" FontSize="11" Opacity="0.6" Margin="0,0,0,10"/>
+                        <TextBlock Text="Accent" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
+                        <views:ThemeColorPicker x:Name="DarkAccentPicker" Margin="0,0,0,14"/>
+                        <TextBlock Text="Background" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
+                        <views:ThemeColorPicker x:Name="DarkBackgroundPicker" Margin="0,0,0,14"/>
+                        <TextBlock Text="Icon color" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
+                        <views:ThemeColorPicker x:Name="DarkIconPicker" Margin="0,0,0,8"/>
                     </StackPanel>
-                    <Grid>
-                        <wv2:WebView2 x:Name="HelpWebView"/>
-                        <TextBox x:Name="HelpFallbackText" IsReadOnly="True" FontFamily="Consolas" FontSize="12"
-                                 VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" Visibility="Collapsed"/>
-                    </Grid>
-                </DockPanel>
-            </TabItem>
+                </Grid>
 
-        </TabControl>
-    </DockPanel>
-</Window>
+            </Grid>
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

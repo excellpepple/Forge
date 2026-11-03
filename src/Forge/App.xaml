@@ -2,8 +2,33 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:Forge"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-         
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:ThemesDictionary Theme="Light" />
+                <ui:ControlsDictionary />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Fallback values so XAML referencing these DynamicResources renders
+                 correctly before ThemeService.ApplyAndWatch() runs on startup;
+                 ThemeService replaces every one of these at runtime. Keep in sync
+                 with ThemeSettings' own defaults. -->
+            <SolidColorBrush x:Key="ForgeAccentBrush" Color="#D9681F" />
+            <SolidColorBrush x:Key="ForgeAccentSoftBrush" Color="#FCE8D8" />
+            <SolidColorBrush x:Key="ForgeOnAccentBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="ForgeBackgroundBrush" Color="#F7F5F2" />
+            <SolidColorBrush x:Key="ForgeSidebarBackgroundBrush" Color="#F0ECE5" />
+            <SolidColorBrush x:Key="ForgeIconBrush" Color="#D9681F" />
+            <SolidColorBrush x:Key="ForgeMatchBrush" Color="#0F6E56" />
+            <SolidColorBrush x:Key="ForgeMatchBgBrush" Color="#E1F5EE" />
+            <SolidColorBrush x:Key="ForgeWarnBrush" Color="#8A5A0B" />
+            <SolidColorBrush x:Key="ForgeWarnBgBrush" Color="#FAEEDA" />
+            <SolidColorBrush x:Key="ForgeDangerTextBrush" Color="#993C1D" />
+            <SolidColorBrush x:Key="ForgeDangerBgBrush" Color="#FAECE7" />
+            <SolidColorBrush x:Key="ForgeDangerFillBrush" Color="#C0392B" />
+            <SolidColorBrush x:Key="ForgeOnDangerBrush" Color="#FFFFFF" />
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

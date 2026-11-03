@@ -6,15 +6,24 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Threading;
 using Markdig;
 using Forge.Models;
 using Forge.Services;
 using Forge.Views;
+using Wpf.Ui.Controls;
+using Button = System.Windows.Controls.Button;
+using TextBlock = System.Windows.Controls.TextBlock;
+using MessageBox = System.Windows.MessageBox;
+using MessageBoxButton = System.Windows.MessageBoxButton;
+using MessageBoxImage = System.Windows.MessageBoxImage;
+using MessageBoxResult = System.Windows.MessageBoxResult;
+using TreeViewItem = System.Windows.Controls.TreeViewItem;
 
 namespace Forge;
 
-public partial class MainWindow : Window
+public partial class MainWindow : FluentWindow
 {
     private PowerShellHost? _host;
     private string? _projectRoot;
@@ -24,6 +33,8 @@ public partial class MainWindow : Window
     private SubmoduleNode? _selectedNode;
     private bool _suppressRecentSelection;
 
+    private readonly ThemeService _theme;
+
     // Available branches per submodule path, fetched in the background
     // (project open + periodically) so the branch picker opens instantly
     // instead of making the user wait on a git call every time.
@@ -32,10 +43,36 @@ public partial class MainWindow : Window
     private bool _branchPrefetchInFlight;
 
     private readonly Control[] _busyGatedControls;
+    private readonly Dictionary<string, Grid> _pages;
+    private readonly Dictionary<string, Button> _navButtons;
+    private string? _currentPage;
 
     public MainWindow()
     {
         InitializeComponent();
+
+        _theme = new ThemeService(this);
+        _theme.ApplyAndWatch();
+
+        _pages = new Dictionary<string, Grid>
+        {
+            ["Overview"] = OverviewPage,
+            ["Submodules"] = SubmodulesPage,
+            ["Build"] = BuildPage,
+            ["Log"] = LogPage,
+            ["Help"] = HelpPage,
+            ["Settings"] = SettingsPage
+        };
+        _navButtons = new Dictionary<string, Button>
+        {
+            ["Overview"] = OverviewNavButton,
+            ["Submodules"] = SubmodulesNavButton,
+            ["Build"] = BuildNavButton,
+            ["Log"] = LogNavButton,
+            ["Help"] = HelpNavButton,
+            ["Settings"] = SettingsNavButton
+        };
+
         _busyGatedControls = new Control[]
         {
             OpenProjectButton, RecentProjectsCombo,
@@ -45,7 +82,58 @@ public partial class MainWindow : Window
         };
         _branchRefreshTimer.Tick += async (_, _) => await PrefetchAllBranchesAsync();
         PopulateRecentProjects(null);
+
+        InitializeThemePickers();
+
+        // Forge's own docs should be readable before any project is open --
+        // only the Overview/Submodules/Build/Log tabs need a loaded project.
+        PopulateHelpDocs();
+        ShowPage("Help");
+
+        _ = AutoReopenLastProjectAsync();
     }
+
+    // -----------------------------------------------------------------------
+    // Navigation (replaces a TabControl: plain buttons + Grid visibility, so
+    // the sidebar can hold a project switcher above the nav list without
+    // fighting TabControl's own header/content layout model)
+
+    private void ShowPage(string key)
+    {
+        foreach (var (name, grid) in _pages)
+            grid.Visibility = name == key ? Visibility.Visible : Visibility.Collapsed;
+
+        foreach (var (name, button) in _navButtons)
+        {
+            var isActive = name == key;
+            var icon = (button.Content as StackPanel)?.Children.OfType<SymbolIcon>().FirstOrDefault();
+            var label = (button.Content as StackPanel)?.Children.OfType<TextBlock>().FirstOrDefault();
+            if (isActive)
+            {
+                button.SetResourceReference(BackgroundProperty, "ForgeAccentSoftBrush");
+                icon?.SetResourceReference(ForegroundProperty, "ForgeAccentBrush");
+                label?.SetResourceReference(ForegroundProperty, "ForgeAccentBrush");
+                if (label != null) label.FontWeight = FontWeights.Medium;
+            }
+            else
+            {
+                button.ClearValue(BackgroundProperty); // back to the style's Transparent default
+                icon?.SetResourceReference(ForegroundProperty, "ForgeIconBrush");
+                label?.SetResourceReference(ForegroundProperty, "TextFillColorPrimaryBrush");
+                if (label != null) label.FontWeight = FontWeights.Normal;
+            }
+        }
+
+        _currentPage = key;
+    }
+
+    private void NavButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string key }) ShowPage(key);
+    }
+
+    private void SetProjectNavEnabled(bool enabled) =>
+        OverviewNavButton.IsEnabled = SubmodulesNavButton.IsEnabled = BuildNavButton.IsEnabled = LogNavButton.IsEnabled = enabled;
 
     // -----------------------------------------------------------------------
     // Opening a project
@@ -65,6 +153,16 @@ public partial class MainWindow : Window
         if (_suppressRecentSelection) return;
         if (RecentProjectsCombo.SelectedItem is string path && path != _projectRoot)
             _ = OpenProjectAsync(path);
+    }
+
+    // Reopens whatever project was open last time Forge ran, so the user
+    // doesn't have to re-pick it every launch. Silent on failure (missing
+    // folder, moved repo, etc.) -- the user can still open one manually.
+    private async Task AutoReopenLastProjectAsync()
+    {
+        var last = AppSettingsService.Load().RecentProjects.FirstOrDefault();
+        if (last != null && ProjectValidator.IsForgeProject(last))
+            await OpenProjectAsync(last);
     }
 
     private async Task OpenProjectAsync(string path)
@@ -100,7 +198,8 @@ public partial class MainWindow : Window
             AppSettingsService.AddRecent(path);
             PopulateRecentProjects(path);
 
-            MainTabs.IsEnabled = true;
+            SetProjectNavEnabled(true);
+            ShowPage("Overview");
             ProjectTitleText.Text = _projectInfo.Title;
 
             _ = PrefetchAllBranchesAsync(); // background; doesn't block opening the project
@@ -139,6 +238,58 @@ public partial class MainWindow : Window
         OverviewEditorTarget.Text = $"Editor target: {_projectInfo.EditorTarget}";
         OverviewUProject.Text = $"Project file: {_projectInfo.UProject}";
         SyncSubmodulesList.ItemsSource = _projectInfo.RequiredSubmodules;
+    }
+
+    // -----------------------------------------------------------------------
+    // Theme (Settings page)
+
+    private static readonly string[] ColorPresets = { "#D9681F", "#B8860B", "#A3333D", "#3B6EA5", "#1F8A70", "#B5562E" };
+    private static readonly string[] LightBgPresets = { "#F7F5F2", "#F2F3F5", "#FFFFFF" };
+    private static readonly string[] DarkBgPresets = { "#121212", "#1C1A17", "#15181C" };
+
+    private void InitializeThemePickers()
+    {
+        var s = _theme.Settings;
+
+        LightAccentPicker.Initialize(ColorPresets, s.LightAccent);
+        LightAccentPicker.ColorPicked += hex => _theme.SetLightAccent(hex);
+        LightBackgroundPicker.Initialize(LightBgPresets, s.LightBackground);
+        LightBackgroundPicker.ColorPicked += hex => _theme.SetLightBackground(hex);
+        LightIconPicker.Initialize(ColorPresets, s.LightIcon);
+        LightIconPicker.ColorPicked += hex => _theme.SetLightIcon(hex);
+
+        DarkAccentPicker.Initialize(ColorPresets, s.DarkAccent);
+        DarkAccentPicker.ColorPicked += hex => _theme.SetDarkAccent(hex);
+        DarkBackgroundPicker.Initialize(DarkBgPresets, s.DarkBackground);
+        DarkBackgroundPicker.ColorPicked += hex => _theme.SetDarkBackground(hex);
+        DarkIconPicker.Initialize(ColorPresets, s.DarkIcon);
+        DarkIconPicker.ColorPicked += hex => _theme.SetDarkIcon(hex);
+
+        UpdateModeButtons();
+    }
+
+    private void ModeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string tag }) return;
+        var mode = tag switch { "Light" => ThemeMode.Light, "Dark" => ThemeMode.Dark, _ => ThemeMode.System };
+        _theme.SetMode(mode);
+        UpdateModeButtons();
+    }
+
+    private void UpdateModeButtons()
+    {
+        var buttons = new (Button Button, ThemeMode Mode)[]
+        {
+            (ModeLightButton, ThemeMode.Light), (ModeDarkButton, ThemeMode.Dark), (ModeSystemButton, ThemeMode.System)
+        };
+        foreach (var (button, mode) in buttons)
+        {
+            var isActive = _theme.Settings.Mode == mode;
+            if (isActive) button.SetResourceReference(BackgroundProperty, "ForgeAccentSoftBrush");
+            else button.ClearValue(BackgroundProperty);
+            button.SetResourceReference(ForegroundProperty, isActive ? "ForgeAccentBrush" : "TextFillColorPrimaryBrush");
+            button.SetResourceReference(Control.BorderBrushProperty, isActive ? "ForgeAccentBrush" : "ControlElevationBorderBrush");
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -270,6 +421,23 @@ public partial class MainWindow : Window
     private void SubmodulesTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
         => _selectedNode = e.NewValue as SubmoduleNode;
 
+    // TreeViewItem doesn't select on right-click the way it does on left-click,
+    // so without this, right-clicking a node the user hadn't already
+    // left-clicked would pop the context menu for whatever was selected
+    // before -- the wrong submodule. This is the bubbling MouseRightButtonDown,
+    // not the tunneling PreviewMouseRightButtonDown: bubbling starts at the
+    // actual clicked (innermost) item and works outward, so that item's
+    // handler runs -- and marks Handled -- before the event ever reaches a
+    // parent's handler. The tunneling Preview version runs parent-first,
+    // which is why a nested submodule's right-click was selecting its parent.
+    private void SubmoduleTreeItem_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not TreeViewItem item) return;
+        item.Focus();
+        item.IsSelected = true;
+        e.Handled = true;
+    }
+
     private async void SwitchBranchButton_Click(object sender, RoutedEventArgs e)
     {
         if (_selectedNode == null)
@@ -296,7 +464,7 @@ public partial class MainWindow : Window
             "Forge", MessageBoxButton.YesNo, MessageBoxImage.Warning);
         if (confirm != MessageBoxResult.Yes) return;
 
-        MainTabs.SelectedIndex = 3; // Log tab
+        ShowPage("Log");
         SetBusy(true);
         try
         {
@@ -384,7 +552,7 @@ public partial class MainWindow : Window
 
     private async Task RunSync(IEnumerable<string>? only)
     {
-        MainTabs.SelectedIndex = 3; // Log tab
+        ShowPage("Log");
         SetBusy(true);
         try
         {
@@ -412,7 +580,7 @@ public partial class MainWindow : Window
 
     private async Task RunBuild(bool noBuild, bool buildOnly, bool rebuild, string configuration, bool skipSyncCheck)
     {
-        MainTabs.SelectedIndex = 3; // Log tab
+        ShowPage("Log");
         SetBusy(true);
         try
         {
@@ -532,7 +700,7 @@ public partial class MainWindow : Window
         if (await EnsureWebViewAsync())
         {
             var body = Markdig.Markdown.ToHtml(markdown, MarkdownPipeline);
-            ShowHelpHtml(HelpHtmlTemplate.Replace("{{BODY}}", body));
+            ShowHelpHtml(BuildHelpHtml(body));
         }
         else
         {
@@ -554,32 +722,30 @@ public partial class MainWindow : Window
         HelpFallbackText.Text = text;
     }
 
-    // Declares color-scheme explicitly with real colors for both modes --
-    // without this, Chromium's own "auto dark theme for web content" guesses
-    // at inverting an unstyled page and can land on unreadable combinations
-    // (dark-on-dark). This way it adapts to Windows' light/dark setting
-    // correctly instead of guessing.
-    private const string HelpHtmlTemplate = @"<!DOCTYPE html><html><head><meta charset='utf-8'>
-        <meta name='color-scheme' content='light dark'>
-        <style>
-        :root {
-            color-scheme: light dark;
-            --bg: #ffffff; --fg: #1a1a1a; --border: #ddd; --code-bg: #f0f0f0; --pre-bg: #f5f5f5; --link: #2564cf; --quote: #666;
-        }
-        @media (prefers-color-scheme: dark) {
-            :root { --bg: #1e1e1e; --fg: #dcdcdc; --border: #444; --code-bg: #333333; --pre-bg: #2a2a2a; --link: #6ab0ff; --quote: #aaa; }
-        }
-        html, body { background: var(--bg); color: var(--fg); }
-        body { font-family: Segoe UI, sans-serif; font-size: 14px; line-height: 1.6; max-width: 900px; margin: 16px auto; padding: 0 16px; }
-        h1, h2, h3 { border-bottom: 1px solid var(--border); padding-bottom: 4px; }
-        code { background: var(--code-bg); padding: 1px 4px; border-radius: 3px; font-family: Consolas, monospace; }
-        pre { background: var(--pre-bg); padding: 10px; border-radius: 4px; overflow-x: auto; }
-        pre code { background: none; padding: 0; }
-        table { border-collapse: collapse; }
-        th, td { border: 1px solid var(--border); padding: 4px 8px; }
-        a { color: var(--link); }
-        blockquote { border-left: 3px solid var(--border); margin-left: 0; padding-left: 12px; color: var(--quote); }
-        </style></head><body>{{BODY}}</body></html>";
+    // Matches whichever mode Forge itself is currently showing (including an
+    // explicit Light/Dark override, not just the OS preference) instead of
+    // guessing via prefers-color-scheme -- that guess is what produced the
+    // original dark-on-dark bug.
+    private string BuildHelpHtml(string body)
+    {
+        var dark = Wpf.Ui.Appearance.ApplicationThemeManager.GetAppTheme() == Wpf.Ui.Appearance.ApplicationTheme.Dark;
+        var (bg, fg, border, codeBg, preBg, link, quote) = dark
+            ? ("#1e1e1e", "#dcdcdc", "#444", "#333333", "#2a2a2a", "#6ab0ff", "#aaa")
+            : ("#ffffff", "#1a1a1a", "#ddd", "#f0f0f0", "#f5f5f5", "#2564cf", "#666");
+
+        return $@"<!DOCTYPE html><html><head><meta charset='utf-8'><style>
+            html, body {{ background: {bg}; color: {fg}; }}
+            body {{ font-family: Segoe UI, sans-serif; font-size: 14px; line-height: 1.6; max-width: 900px; margin: 16px auto; padding: 0 16px; }}
+            h1, h2, h3 {{ border-bottom: 1px solid {border}; padding-bottom: 4px; }}
+            code {{ background: {codeBg}; padding: 1px 4px; border-radius: 3px; font-family: Consolas, monospace; }}
+            pre {{ background: {preBg}; padding: 10px; border-radius: 4px; overflow-x: auto; }}
+            pre code {{ background: none; padding: 0; }}
+            table {{ border-collapse: collapse; }}
+            th, td {{ border: 1px solid {border}; padding: 4px 8px; }}
+            a {{ color: {link}; }}
+            blockquote {{ border-left: 3px solid {border}; margin-left: 0; padding-left: 12px; color: {quote}; }}
+            </style></head><body>{body}</body></html>";
+    }
 
     private void OpenExternalDocButton_Click(object sender, RoutedEventArgs e)
     {
