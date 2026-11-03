@@ -1,0 +1,14 @@
+# Build outputs
+[Bb]in/
+[Oo]bj/
+/publish/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+
+# OS cruft
+Thumbs.db
+Desktop.ini
+.DS_Store

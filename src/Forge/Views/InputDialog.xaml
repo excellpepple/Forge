@@ -1,0 +1,21 @@
+<Window x:Class="Forge.Views.InputDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Forge" Height="190" Width="460"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        ShowInTaskbar="False">
+    <StackPanel Margin="16">
+        <TextBlock x:Name="PromptText" TextWrapping="Wrap" Margin="0,0,0,12"/>
+        <DockPanel Margin="0,0,0,16">
+            <Button x:Name="RefreshButton" DockPanel.Dock="Right" Content="Refresh" Margin="8,0,0,0"
+                    Click="Refresh_Click" Visibility="Collapsed"
+                    ToolTip="Re-fetch the branch list for just this submodule from origin."/>
+            <ComboBox x:Name="InputCombo" IsEditable="True" IsTextSearchEnabled="True"
+                      ToolTip="Pick a branch from the list, or type one that isn't listed yet."/>
+        </DockPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Cancel" Width="80" Margin="0,0,8,0" IsCancel="True" Click="Cancel_Click"/>
+            <Button Content="OK" Width="80" IsDefault="True" Click="Ok_Click"/>
+        </StackPanel>
+    </StackPanel>
+</Window>
