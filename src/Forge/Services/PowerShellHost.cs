@@ -149,6 +149,8 @@ public sealed class PowerShellHost : IDisposable
             watchBranches.Properties.Add(new PSNoteProperty(kv.Key, kv.Value));
         var payload = new PSObject();
         payload.Properties.Add(new PSNoteProperty("WatchBranches", watchBranches));
+        payload.Properties.Add(new PSNoteProperty("EnableLfsLocking", (object?)settings.EnableLfsLocking));
+        payload.Properties.Add(new PSNoteProperty("NotifyOnUnlock", settings.NotifyOnUnlock.ToArray()));
         return InvokeAsync(ps => ps.AddCommand("Set-WorkflowLocalSettings").AddParameter("Settings", payload));
     }
 
@@ -234,9 +236,20 @@ public sealed class PowerShellHost : IDisposable
     private static LocalSettings ConvertLocalSettings(PSObject? obj)
     {
         var result = new LocalSettings();
-        if (obj?.Properties["WatchBranches"]?.Value is not PSObject watchBranches) return result;
-        foreach (var p in watchBranches.Properties)
-            result.WatchBranches[p.Name] = p.Value?.ToString() ?? "";
+        if (obj == null) return result;
+
+        if (obj.Properties["WatchBranches"]?.Value is PSObject watchBranches)
+        {
+            foreach (var p in watchBranches.Properties)
+                result.WatchBranches[p.Name] = p.Value?.ToString() ?? "";
+        }
+
+        var lfsValue = obj.Properties["EnableLfsLocking"]?.Value;
+        if (lfsValue != null) result.EnableLfsLocking = Convert.ToBoolean(lfsValue);
+
+        if (obj.Properties["NotifyOnUnlock"]?.Value is IEnumerable notifyList and not string)
+            result.NotifyOnUnlock = notifyList.Cast<object>().Select(o => o?.ToString() ?? "").Where(s => s.Length > 0).ToList();
+
         return result;
     }
 

@@ -14,6 +14,7 @@
         Background="{DynamicResource ForgeBackgroundBrush}">
 
     <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <Style x:Key="NavButtonStyle" TargetType="Button">
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="Padding" Value="14,9"/>
@@ -88,6 +89,13 @@
             <MenuItem Header="Refresh Branch Lists" Click="RefreshBranchListsButton_Click">
                 <MenuItem.Icon><ui:SymbolIcon Symbol="CloudArrowDown24" Foreground="{DynamicResource ForgeAccentBrush}"/></MenuItem.Icon>
             </MenuItem>
+            <MenuItem Header="Shelve..." Click="ShelveButton_Click">
+                <MenuItem.Icon><ui:SymbolIcon Symbol="Archive32" Foreground="{DynamicResource ForgeAccentBrush}"/></MenuItem.Icon>
+            </MenuItem>
+            <Separator/>
+            <MenuItem Header="Open in External Git Tool..." Click="OpenAdvancedViewButton_Click">
+                <MenuItem.Icon><ui:SymbolIcon Symbol="Open28" Foreground="{DynamicResource ForgeAccentBrush}"/></MenuItem.Icon>
+            </MenuItem>
             <Separator/>
             <MenuItem Header="Refresh" Click="RefreshSubmodulesButton_Click">
                 <MenuItem.Icon><ui:SymbolIcon Symbol="ArrowSync24" Foreground="{DynamicResource ForgeAccentBrush}"/></MenuItem.Icon>
@@ -101,7 +109,35 @@
                  event ever reaches a parent's handler. The tunneling Preview
                  version runs parent first, which is why right-clicking a
                  nested submodule was selecting its parent instead. -->
-            <EventSetter Event="MouseRightButtonDown" Handler="SubmoduleTreeItem_MouseRightButtonDown"/>
+            <EventSetter Event="MouseRightButtonDown" Handler="TreeItem_MouseRightButtonDown"/>
+        </Style>
+
+        <ContextMenu x:Key="FileContextMenu">
+            <MenuItem Header="Lock" Click="LockSelectedButton_Click">
+                <MenuItem.Icon><ui:SymbolIcon Symbol="LockClosed24" Foreground="{DynamicResource ForgeAccentBrush}"/></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="Unlock" Click="UnlockSelectedButton_Click">
+                <MenuItem.Icon><ui:SymbolIcon Symbol="LockOpen24" Foreground="{DynamicResource ForgeAccentBrush}"/></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="Notify Me When Unlocked" Click="NotifyOnUnlockButton_Click">
+                <MenuItem.Icon><ui:SymbolIcon Symbol="Alert24" Foreground="{DynamicResource ForgeAccentBrush}"/></MenuItem.Icon>
+            </MenuItem>
+            <Separator/>
+            <MenuItem Header="History..." Click="ViewHistoryButton_Click">
+                <MenuItem.Icon><ui:SymbolIcon Symbol="History28" Foreground="{DynamicResource ForgeAccentBrush}"/></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="Resolve Conflict..." Click="ResolveConflictButton_Click">
+                <MenuItem.Icon><ui:SymbolIcon Symbol="ArrowSplit24" Foreground="{DynamicResource ForgeDangerTextBrush}"/></MenuItem.Icon>
+            </MenuItem>
+            <Separator/>
+            <MenuItem Header="Refresh" Click="RefreshFilesButton_Click">
+                <MenuItem.Icon><ui:SymbolIcon Symbol="ArrowSync24" Foreground="{DynamicResource ForgeAccentBrush}"/></MenuItem.Icon>
+            </MenuItem>
+        </ContextMenu>
+        <Style x:Key="FileTreeItemStyle" TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+            <Setter Property="ContextMenu" Value="{StaticResource FileContextMenu}"/>
+            <EventSetter Event="MouseRightButtonDown" Handler="TreeItem_MouseRightButtonDown"/>
         </Style>
     </ui:FluentWindow.Resources>
 
@@ -118,14 +154,26 @@
             </ui:TitleBar.Icon>
         </ui:TitleBar>
 
-        <!-- Failure banner -->
-        <Border x:Name="FailBanner" Grid.Row="1" Background="{DynamicResource ForgeDangerFillBrush}" Padding="10" Visibility="Collapsed">
-            <DockPanel>
-                <Button DockPanel.Dock="Right" Content="Dismiss" Padding="8,2" Click="DismissBanner_Click"
-                        ToolTip="Hide this message. It doesn't undo anything -- the operation already stopped safely."/>
-                <TextBlock x:Name="FailBannerText" TextWrapping="Wrap" Foreground="{DynamicResource ForgeOnDangerBrush}" FontWeight="Bold"/>
-            </DockPanel>
-        </Border>
+        <StackPanel Grid.Row="1">
+            <!-- Failure banner -->
+            <Border x:Name="FailBanner" Background="{DynamicResource ForgeDangerFillBrush}" Padding="10" Visibility="Collapsed">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Dismiss" Padding="8,2" Click="DismissBanner_Click"
+                            ToolTip="Hide this message. It doesn't undo anything -- the operation already stopped safely."/>
+                    <TextBlock x:Name="FailBannerText" TextWrapping="Wrap" Foreground="{DynamicResource ForgeOnDangerBrush}" FontWeight="Bold"/>
+                </DockPanel>
+            </Border>
+
+            <!-- In-app notification (e.g. "unlock freed"), shown here instead of
+                 a Windows toast. Auto-dismisses itself; see ShowNotifyBanner. -->
+            <Border x:Name="NotifyBanner" Background="{DynamicResource ForgeAccentSoftBrush}" Padding="10" Visibility="Collapsed">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Dismiss" Padding="8,2" Click="DismissNotifyBanner_Click"/>
+                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Alert24" Margin="0,0,8,0" Foreground="{DynamicResource ForgeMatchBrush}"/>
+                    <TextBlock x:Name="NotifyBannerText" TextWrapping="Wrap" Foreground="{DynamicResource ForgeMatchBrush}" FontWeight="Bold"/>
+                </DockPanel>
+            </Border>
+        </StackPanel>
 
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
@@ -170,6 +218,20 @@
                             <StackPanel Orientation="Horizontal">
                                 <ui:SymbolIcon x:Name="SubmodulesNavIcon" Symbol="BranchFork24" Margin="0,0,10,0"/>
                                 <TextBlock x:Name="SubmodulesNavLabel" Text="Submodules"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="FilesNavButton" Style="{StaticResource NavButtonStyle}" Click="NavButton_Click" Tag="Files" IsEnabled="False"
+                                ToolTip="Every tracked file across every repo, with its status, lock and download state.">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon x:Name="FilesNavIcon" Symbol="Folder24" Margin="0,0,10,0"/>
+                                <TextBlock x:Name="FilesNavLabel" Text="Files"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="HistoryNavButton" Style="{StaticResource NavButtonStyle}" Click="NavButton_Click" Tag="History" IsEnabled="False"
+                                ToolTip="Commit graph for a repo -- simplified by default, with a full view available.">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon x:Name="HistoryNavIcon" Symbol="History28" Margin="0,0,10,0"/>
+                                <TextBlock x:Name="HistoryNavLabel" Text="History"/>
                             </StackPanel>
                         </Button>
                         <Button x:Name="BuildNavButton" Style="{StaticResource NavButtonStyle}" Click="NavButton_Click" Tag="Build" IsEnabled="False"
@@ -217,6 +279,18 @@
                                     Background="{DynamicResource ForgeAccentBrush}" Foreground="{DynamicResource ForgeOnAccentBrush}"
                                     ToolTip="Build the editor with default options and open it when done. For more control, use the Build tab."/>
                         </StackPanel>
+
+                        <Border Style="{StaticResource ToolbarCardStyle}" Margin="0,24,0,0" Padding="16,12" HorizontalAlignment="Left">
+                            <StackPanel>
+                                <TextBlock Text="Your stuff" FontWeight="Medium" Margin="0,0,0,8"/>
+                                <TextBlock x:Name="YourStuffUnpushedText" Margin="0,0,0,4"
+                                           ToolTip="Local commits not yet pushed to origin, across every repo."/>
+                                <TextBlock x:Name="YourStuffLocksText" Margin="0,0,0,4"
+                                           ToolTip="LFS locks you currently hold."/>
+                                <TextBlock x:Name="YourStuffOutdatedText"
+                                           ToolTip="LFS files not yet downloaded on this machine (still pointer files)."/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </Grid>
 
@@ -259,6 +333,20 @@
                                         <TextBlock Text="Refresh Branch Lists"/>
                                     </StackPanel>
                                 </Button>
+                                <Button x:Name="ShelveButton" Style="{StaticResource ToolbarButtonStyle}" Click="ShelveButton_Click"
+                                        ToolTip="Save the selected submodule's uncommitted changes for later, so Sync has a clean tree to work with.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="Archive32" Margin="0,0,6,0" Foreground="{DynamicResource ForgeAccentBrush}"/>
+                                        <TextBlock Text="Shelve..."/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="OpenAdvancedViewButton" Style="{StaticResource ToolbarButtonStyle}" Click="OpenAdvancedViewButton_Click"
+                                        ToolTip="Opens the selected submodule in whichever external Git GUI Forge finds installed (Fork, then SourceGit), for anything Forge doesn't cover. Entirely optional -- Forge doesn't require either one.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="Open28" Margin="0,0,6,0" Foreground="{DynamicResource ForgeAccentBrush}"/>
+                                        <TextBlock x:Name="OpenAdvancedViewButtonLabel" Text="Open in External Git Tool..."/>
+                                    </StackPanel>
+                                </Button>
                                 <TextBlock x:Name="BranchRefreshStatusText" VerticalAlignment="Center" Margin="10,0,0,0" Opacity="0.7"/>
                             </StackPanel>
                         </Border>
@@ -287,6 +375,145 @@
                                 </HierarchicalDataTemplate>
                             </TreeView.ItemTemplate>
                         </TreeView>
+                    </DockPanel>
+                </Grid>
+
+                <Grid x:Name="FilesPage" Visibility="Collapsed" Margin="24">
+                    <DockPanel>
+                        <Border DockPanel.Dock="Top" Style="{StaticResource ToolbarCardStyle}" Margin="0,0,0,14">
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="RefreshFilesButton" Style="{StaticResource ToolbarButtonStyle}" Click="RefreshFilesButton_Click"
+                                        ToolTip="Re-read file status, lock and download state for every repo (except the engine, which is too large to scan this way).">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="ArrowSync24" Margin="0,0,6,0" Foreground="{DynamicResource ForgeAccentBrush}"/>
+                                        <TextBlock Text="Refresh"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="FilesFilterAllButton" Content="All" Style="{StaticResource SegButtonStyle}" Click="FilesFilter_Click" Tag="All" Margin="16,0,0,0"/>
+                                <Button x:Name="FilesFilterChangedButton" Content="Changed" Style="{StaticResource SegButtonStyle}" Click="FilesFilter_Click" Tag="Changed"/>
+                                <Button x:Name="FilesFilterLockedButton" Content="Locked" Style="{StaticResource SegButtonStyle}" Click="FilesFilter_Click" Tag="Locked"/>
+                                <Button x:Name="FilesFilterOutdatedButton" Content="Not downloaded" Style="{StaticResource SegButtonStyle}" Click="FilesFilter_Click" Tag="NotDownloaded"/>
+                                <Button x:Name="FilesFilterStaleButton" Content="Stale locks" Style="{StaticResource SegButtonStyle}" Click="FilesFilter_Click" Tag="Stale"/>
+                                <TextBox x:Name="FilesSearchBox" Width="200" Margin="16,0,0,0" VerticalContentAlignment="Center"
+                                         TextChanged="FilesSearchBox_TextChanged" ToolTip="Filter by file or folder name."/>
+                                <TextBlock x:Name="FilesStatusText" VerticalAlignment="Center" Margin="12,0,0,0" Opacity="0.7"/>
+                            </StackPanel>
+                        </Border>
+                        <Border DockPanel.Dock="Top" Style="{StaticResource ToolbarCardStyle}" Margin="0,0,0,14">
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="LockSelectedButton" Style="{StaticResource ToolbarButtonStyle}" Click="LockSelectedButton_Click"
+                                        ToolTip="Lock the selected file so only you can check in changes to it. Requires the LFS feature flag.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="LockClosed24" Margin="0,0,6,0" Foreground="{DynamicResource ForgeAccentBrush}"/>
+                                        <TextBlock Text="Lock"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="UnlockSelectedButton" Style="{StaticResource ToolbarButtonStyle}" Click="UnlockSelectedButton_Click"
+                                        ToolTip="Release a lock you hold on the selected file.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="LockOpen24" Margin="0,0,6,0" Foreground="{DynamicResource ForgeAccentBrush}"/>
+                                        <TextBlock Text="Unlock"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="NotifyOnUnlockButton" Style="{StaticResource ToolbarButtonStyle}" Click="NotifyOnUnlockButton_Click"
+                                        ToolTip="Get a notification the next time someone else's lock on the selected file is released.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="Alert24" Margin="0,0,6,0" Foreground="{DynamicResource ForgeAccentBrush}"/>
+                                        <TextBlock Text="Notify Me When Unlocked"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="ViewHistoryButton" Style="{StaticResource ToolbarButtonStyle}" Click="ViewHistoryButton_Click"
+                                        ToolTip="See every commit that touched the selected file, and open, diff or restore an old version.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="History28" Margin="0,0,6,0" Foreground="{DynamicResource ForgeAccentBrush}"/>
+                                        <TextBlock Text="History..."/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="ResolveConflictButton" Style="{StaticResource ToolbarButtonStyle}" Click="ResolveConflictButton_Click"
+                                        ToolTip="Pick which version to keep when the same asset was changed on both sides.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="ArrowSplit24" Margin="0,0,6,0" Foreground="{DynamicResource ForgeDangerTextBrush}"/>
+                                        <TextBlock Text="Resolve Conflict..."/>
+                                    </StackPanel>
+                                </Button>
+                                <TextBlock x:Name="CheckedFilesStatusText" VerticalAlignment="Center" Margin="12,0,0,0" Opacity="0.7"/>
+                                <Button x:Name="SubmitButton" Style="{StaticResource ToolbarButtonStyle}" Click="SubmitButton_Click"
+                                        HorizontalAlignment="Right" Margin="12,0,0,0"
+                                        Background="{DynamicResource ForgeAccentBrush}" Foreground="{DynamicResource ForgeOnAccentBrush}"
+                                        ToolTip="Commit the checked files, push, release their locks, and bump every ancestor submodule's pin up to the superproject.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="CloudArrowUp24" Margin="0,0,6,0" Foreground="{DynamicResource ForgeOnAccentBrush}"/>
+                                        <TextBlock Text="Submit..."/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                        <TreeView x:Name="FilesTree" ToolTip="Tracked files across every repo except the engine. Right-click a file for lock actions."
+                                  ItemContainerStyle="{StaticResource FileTreeItemStyle}"
+                                  SelectedItemChanged="FilesTree_SelectedItemChanged"
+                                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                            <TreeView.ItemTemplate>
+                                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                                        <CheckBox IsChecked="{Binding IsChecked, Mode=OneWay}" Click="FileCheck_Click"
+                                                  Visibility="{Binding IsFile, Converter={StaticResource BoolToVis}}"
+                                                  Width="22" VerticalAlignment="Center"
+                                                  ToolTip="Check to include this file in the next Submit."/>
+                                        <TextBlock Text="{Binding Name}" Width="260" Margin="0,0,10,0" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding StatusText}" Width="80" Margin="0,0,10,0" Foreground="{Binding StatusBrush}"/>
+                                        <TextBlock Text="{Binding LockText}" Width="150" Margin="0,0,10,0" Opacity="0.75"/>
+                                        <TextBlock Text="{Binding DownloadText}" Opacity="0.75"/>
+                                    </StackPanel>
+                                </HierarchicalDataTemplate>
+                            </TreeView.ItemTemplate>
+                        </TreeView>
+                    </DockPanel>
+                </Grid>
+
+                <Grid x:Name="HistoryPage" Visibility="Collapsed" Margin="24">
+                    <DockPanel>
+                        <Border DockPanel.Dock="Top" Style="{StaticResource ToolbarCardStyle}" Margin="0,0,0,14">
+                            <StackPanel Orientation="Horizontal">
+                                <ComboBox x:Name="HistoryRepoCombo" Width="220" SelectionChanged="HistoryRepoCombo_SelectionChanged"
+                                          ToolTip="Which repo's commit graph to show."/>
+                                <Button x:Name="HistorySimpleButton" Content="Simple" Style="{StaticResource SegButtonStyle}" Click="HistoryMode_Click" Tag="Simple" Margin="16,0,0,0"/>
+                                <Button x:Name="HistoryFullButton" Content="Full" Style="{StaticResource SegButtonStyle}" Click="HistoryMode_Click" Tag="Full"/>
+                                <Button x:Name="RefreshHistoryButton" Style="{StaticResource ToolbarButtonStyle}" Click="RefreshHistoryButton_Click" Margin="16,0,0,0"
+                                        ToolTip="Re-read the commit graph for the selected repo.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="ArrowSync24" Margin="0,0,6,0" Foreground="{DynamicResource ForgeAccentBrush}"/>
+                                        <TextBlock Text="Refresh"/>
+                                    </StackPanel>
+                                </Button>
+                                <TextBlock x:Name="HistoryStatusText" VerticalAlignment="Center" Margin="12,0,0,0" Opacity="0.7"/>
+                            </StackPanel>
+                        </Border>
+
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Canvas x:Name="HistoryGraphCanvas" Grid.Column="0"/>
+                                <ItemsControl x:Name="HistoryCommitList" Grid.Column="1">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Height="24" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,0,0,1"
+                                                    Background="Transparent" MouseDown="HistoryCommitRow_MouseDown" Cursor="Hand"
+                                                    ToolTip="Double-click: if this bumped a submodule pin, see the real commits it pulled in.">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding ShortSha}" Width="70" FontFamily="Consolas" Opacity="0.7"/>
+                                                    <TextBlock Text="{Binding Subject}" Width="360" TextTrimming="CharacterEllipsis" Margin="8,0"/>
+                                                    <TextBlock Text="{Binding AuthorName}" Width="140" Opacity="0.75"/>
+                                                    <TextBlock Text="{Binding Date, StringFormat='{}{0:g}'}" Opacity="0.6"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
+                        </ScrollViewer>
                     </DockPanel>
                 </Grid>
 
@@ -325,6 +552,10 @@
                         <Button x:Name="RunBuildButton" Content="Run Build" Width="140" Height="30" HorizontalAlignment="Left" Click="RunBuildButton_Click"
                                 Background="{DynamicResource ForgeAccentBrush}" Foreground="{DynamicResource ForgeOnAccentBrush}"
                                 ToolTip="Build (and launch, unless 'Build only' is checked) with the options above."/>
+
+                        <TextBlock Text="Housekeeping" FontWeight="Bold" FontSize="14" Margin="0,28,0,10"/>
+                        <Button x:Name="HousekeepingButton" Content="Housekeeping..." Width="160" Height="30" HorizontalAlignment="Left" Click="HousekeepingButton_Click"
+                                ToolTip="See how much space DerivedDataCache/Intermediate are using, clean them, and prune the local LFS cache."/>
                     </StackPanel>
                 </Grid>
 
@@ -369,33 +600,45 @@
                     <StackPanel VerticalAlignment="Top" MaxWidth="560" HorizontalAlignment="Left">
                         <TextBlock Text="Settings" FontSize="20" FontWeight="Bold" Margin="0,0,0,12"/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
-                            <TextBlock x:Name="ThemeSubTab" Text="Theme" FontWeight="Medium" Margin="0,0,20,0"
+                            <TextBlock x:Name="ThemeSubTab" Text="Theme" FontWeight="Medium" Margin="0,0,20,0" Cursor="Hand"
+                                       MouseLeftButtonUp="SettingsSubTab_Click" Tag="Theme"
                                        Foreground="{DynamicResource ForgeAccentBrush}"/>
-                            <TextBlock Text="General" Opacity="0.4" ToolTip="More settings coming later."/>
+                            <TextBlock x:Name="GeneralSubTab" Text="General" Cursor="Hand"
+                                       MouseLeftButtonUp="SettingsSubTab_Click" Tag="General"/>
                         </StackPanel>
 
-                        <TextBlock Text="Mode" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
-                            <Button x:Name="ModeLightButton" Content="Light" Style="{StaticResource SegButtonStyle}" Click="ModeButton_Click" Tag="Light"/>
-                            <Button x:Name="ModeDarkButton" Content="Dark" Style="{StaticResource SegButtonStyle}" Click="ModeButton_Click" Tag="Dark"/>
-                            <Button x:Name="ModeSystemButton" Content="System" Style="{StaticResource SegButtonStyle}" Click="ModeButton_Click" Tag="System"/>
+                        <StackPanel x:Name="ThemeTabContent">
+                            <TextBlock Text="Mode" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                                <Button x:Name="ModeLightButton" Content="Light" Style="{StaticResource SegButtonStyle}" Click="ModeButton_Click" Tag="Light"/>
+                                <Button x:Name="ModeDarkButton" Content="Dark" Style="{StaticResource SegButtonStyle}" Click="ModeButton_Click" Tag="Dark"/>
+                                <Button x:Name="ModeSystemButton" Content="System" Style="{StaticResource SegButtonStyle}" Click="ModeButton_Click" Tag="System"/>
+                            </StackPanel>
+
+                            <TextBlock Text="LIGHT MODE" FontSize="11" Opacity="0.6" Margin="0,0,0,10"/>
+                            <TextBlock Text="Accent" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
+                            <views:ThemeColorPicker x:Name="LightAccentPicker" Margin="0,0,0,14"/>
+                            <TextBlock Text="Background" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
+                            <views:ThemeColorPicker x:Name="LightBackgroundPicker" Margin="0,0,0,14"/>
+                            <TextBlock Text="Icon color" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
+                            <views:ThemeColorPicker x:Name="LightIconPicker" Margin="0,0,0,20"/>
+
+                            <TextBlock Text="DARK MODE" FontSize="11" Opacity="0.6" Margin="0,0,0,10"/>
+                            <TextBlock Text="Accent" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
+                            <views:ThemeColorPicker x:Name="DarkAccentPicker" Margin="0,0,0,14"/>
+                            <TextBlock Text="Background" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
+                            <views:ThemeColorPicker x:Name="DarkBackgroundPicker" Margin="0,0,0,14"/>
+                            <TextBlock Text="Icon color" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
+                            <views:ThemeColorPicker x:Name="DarkIconPicker" Margin="0,0,0,8"/>
                         </StackPanel>
 
-                        <TextBlock Text="LIGHT MODE" FontSize="11" Opacity="0.6" Margin="0,0,0,10"/>
-                        <TextBlock Text="Accent" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
-                        <views:ThemeColorPicker x:Name="LightAccentPicker" Margin="0,0,0,14"/>
-                        <TextBlock Text="Background" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
-                        <views:ThemeColorPicker x:Name="LightBackgroundPicker" Margin="0,0,0,14"/>
-                        <TextBlock Text="Icon color" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
-                        <views:ThemeColorPicker x:Name="LightIconPicker" Margin="0,0,0,20"/>
-
-                        <TextBlock Text="DARK MODE" FontSize="11" Opacity="0.6" Margin="0,0,0,10"/>
-                        <TextBlock Text="Accent" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
-                        <views:ThemeColorPicker x:Name="DarkAccentPicker" Margin="0,0,0,14"/>
-                        <TextBlock Text="Background" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
-                        <views:ThemeColorPicker x:Name="DarkBackgroundPicker" Margin="0,0,0,14"/>
-                        <TextBlock Text="Icon color" Opacity="0.7" FontSize="12" Margin="0,0,0,6"/>
-                        <views:ThemeColorPicker x:Name="DarkIconPicker" Margin="0,0,0,8"/>
+                        <StackPanel x:Name="GeneralTabContent" Visibility="Collapsed">
+                            <TextBlock Text="Git LFS locking" FontWeight="Medium" Margin="0,0,0,6"/>
+                            <TextBlock TextWrapping="Wrap" Opacity="0.7" FontSize="12" Margin="0,0,0,12"
+                                       Text="Lets Forge show and manage Git LFS file locks -- who's editing what -- the same locks the editor sees. Only matters for projects that use LFS."/>
+                            <CheckBox x:Name="EnableLfsLockingCheck" Content="Enable Git LFS lock management" Click="EnableLfsLockingCheck_Click"/>
+                            <TextBlock x:Name="LfsAutoDetectNote" FontSize="11" Opacity="0.6" Margin="24,6,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
                     </StackPanel>
                 </Grid>
 

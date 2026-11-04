@@ -1,0 +1,51 @@
+<ui:FluentWindow x:Class="Forge.Views.FileHistoryDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="Forge" Height="480" Width="640"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica"
+        WindowCornerPreference="Round"
+        Background="{DynamicResource ForgeBackgroundBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="History" CanMaximize="True" ShowMinimize="False"/>
+
+        <Grid Grid.Row="1" Margin="16,8,16,8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <TextBlock x:Name="PathText" Grid.Row="0" FontWeight="Bold" Margin="0,0,0,8" TextTrimming="CharacterEllipsis"/>
+
+            <Border Grid.Row="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="6">
+                <ListView x:Name="HistoryList" BorderThickness="0" SelectionChanged="HistoryList_SelectionChanged">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="Date" Width="150" DisplayMemberBinding="{Binding Date, StringFormat='{}{0:g}'}"/>
+                            <GridViewColumn Header="Author" Width="130" DisplayMemberBinding="{Binding AuthorName}"/>
+                            <GridViewColumn Header="Commit" Width="80" DisplayMemberBinding="{Binding ShortSha}"/>
+                            <GridViewColumn Header="Message" Width="220" DisplayMemberBinding="{Binding Subject}"/>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+            </Border>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,0,16,16">
+            <Button x:Name="OpenButton" Content="Open This Version" Width="140" Margin="0,0,8,0" Click="Open_Click" IsEnabled="False"
+                    ToolTip="Extract this version and open it with its default app (e.g. Unreal, for a .uasset)."/>
+            <Button x:Name="DiffButton" Content="Diff with Working Copy" Width="160" Margin="0,0,8,0" Click="Diff_Click" IsEnabled="False"
+                    ToolTip="Open Unreal's built-in visual diff between this version and what's on disk now."/>
+            <Button x:Name="RestoreButton" Content="Restore This Version" Width="150" Margin="0,0,8,0" Click="Restore_Click" IsEnabled="False"
+                    ToolTip="Check out this version over the current working copy. Locks the file first if it isn't already locked by you."/>
+            <Button Content="Close" Width="80" IsCancel="True" Click="Close_Click"/>
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

@@ -1,0 +1,49 @@
+<ui:FluentWindow x:Class="Forge.Views.PinBumpDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="Forge" Height="480" Width="600"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica"
+        WindowCornerPreference="Round"
+        Background="{DynamicResource ForgeBackgroundBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="Pin bump contents" CanMaximize="True" ShowMinimize="False"/>
+
+        <ScrollViewer Grid.Row="1" Margin="16,8,16,8" VerticalScrollBarVisibility="Auto">
+            <ItemsControl x:Name="SubmodulesList">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="0,0,0,16">
+                            <TextBlock Text="{Binding Header}" FontWeight="Bold" Margin="0,0,0,6"/>
+                            <Border BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="6">
+                                <ItemsControl ItemsSource="{Binding Commits}" Margin="4">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Margin="4,3">
+                                                <TextBlock Text="{Binding ShortSha}" Width="70" FontFamily="Consolas" Opacity="0.7"/>
+                                                <TextBlock Text="{Binding Subject}" Width="300" TextTrimming="CharacterEllipsis" Margin="8,0"/>
+                                                <TextBlock Text="{Binding AuthorName}" Opacity="0.75"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Border>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,0,16,16">
+            <Button Content="Close" Width="80" IsCancel="True" Click="Close_Click"/>
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>
