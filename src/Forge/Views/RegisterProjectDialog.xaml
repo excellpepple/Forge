@@ -1,0 +1,45 @@
+<ui:FluentWindow x:Class="Forge.Views.RegisterProjectDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="Forge" Height="420" Width="560" MinHeight="380" MinWidth="460"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica"
+        WindowCornerPreference="Round"
+        Background="{DynamicResource ForgeBackgroundBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="Register a Project" CanMaximize="False" ShowMinimize="False"/>
+        <StackPanel Grid.Row="1" Margin="16">
+            <TextBlock TextWrapping="Wrap" Opacity="0.75" Margin="0,0,0,14"
+                       Text="Point Forge at an Unreal project folder that doesn't have Forge set up yet. Forge adds the two small files it needs (Tools\ProjectWorkflow.psm1 and project.config.json) -- nothing else about your project changes."/>
+
+            <DockPanel Margin="0,0,0,10">
+                <Button Content="Choose Folder..." DockPanel.Dock="Right" Padding="12,6" Margin="8,0,0,0" Click="ChooseFolder_Click"/>
+                <TextBox x:Name="FolderBox" IsReadOnly="True" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+            </DockPanel>
+
+            <TextBlock x:Name="StatusText" TextWrapping="Wrap" Opacity="0.75" Margin="0,0,0,14"/>
+
+            <StackPanel x:Name="FormPanel" Visibility="Collapsed">
+                <TextBlock Text="Title" Opacity="0.7" FontSize="12" Margin="0,0,0,4"/>
+                <TextBox x:Name="TitleBox" Margin="0,0,0,12"/>
+                <TextBlock Text="Editor target" Opacity="0.7" FontSize="12" Margin="0,0,0,4"/>
+                <TextBox x:Name="EditorTargetBox" Margin="0,0,0,4"
+                         ToolTip="The Unreal build target Forge compiles, e.g. 'MyProjectEditor'."/>
+                <TextBlock Text="You'll be asked to point Forge at your engine install right after this -- unless this project already bundles its own." FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                <Button Content="Cancel" Width="80" Margin="0,0,8,0" IsCancel="True" Click="Cancel_Click"/>
+                <Button x:Name="ConfirmButton" Content="Register" Width="100" Click="Confirm_Click" IsEnabled="False"
+                        Background="{DynamicResource ForgeAccentBrush}" Foreground="{DynamicResource ForgeOnAccentBrush}"/>
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

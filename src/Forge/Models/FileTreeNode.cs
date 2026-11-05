@@ -59,6 +59,8 @@ public sealed class FileTreeNode : INotifyPropertyChanged
 
     public string StatusText => IsFile ? File!.Status.ToString() : "";
 
+    public bool HasStatus => IsFile && File!.Status != FileStatus.Unmodified;
+
     public Brush StatusBrush => (IsFile ? File!.Status : FileStatus.Unmodified) switch
     {
         FileStatus.Modified => (Brush)System.Windows.Application.Current.Resources["ForgeWarnBrush"],
@@ -66,6 +68,19 @@ public sealed class FileTreeNode : INotifyPropertyChanged
         FileStatus.Deleted => (Brush)System.Windows.Application.Current.Resources["ForgeDangerTextBrush"],
         FileStatus.Conflicted => (Brush)System.Windows.Application.Current.Resources["ForgeDangerTextBrush"],
         FileStatus.Renamed => (Brush)System.Windows.Application.Current.Resources["ForgeWarnBrush"],
+        _ => Brushes.Transparent
+    };
+
+    // Soft-tinted pill background to pair with StatusBrush's text color --
+    // same pattern as the submodule state badges, so a changed file reads as
+    // a small colored chip instead of plain colored text.
+    public Brush StatusBgBrush => (IsFile ? File!.Status : FileStatus.Unmodified) switch
+    {
+        FileStatus.Modified => (Brush)System.Windows.Application.Current.Resources["ForgeWarnBgBrush"],
+        FileStatus.New => (Brush)System.Windows.Application.Current.Resources["ForgeMatchBgBrush"],
+        FileStatus.Deleted => (Brush)System.Windows.Application.Current.Resources["ForgeDangerBgBrush"],
+        FileStatus.Conflicted => (Brush)System.Windows.Application.Current.Resources["ForgeDangerBgBrush"],
+        FileStatus.Renamed => (Brush)System.Windows.Application.Current.Resources["ForgeWarnBgBrush"],
         _ => Brushes.Transparent
     };
 

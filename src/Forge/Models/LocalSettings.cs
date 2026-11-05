@@ -20,4 +20,11 @@ public sealed class LocalSettings
     // next time their lock frees up. One-shot: removed once the notification
     // fires (see MainWindow.CheckNotifyOnUnlockAsync).
     public List<string> NotifyOnUnlock { get; set; } = new();
+
+    // Absolute path to an Unreal Engine install, for a project that doesn't
+    // bundle its own engine submodule. Machine-specific by nature (everyone
+    // installs the engine somewhere different) -- deliberately NOT part of
+    // project.config.json, which is shared/committed. Null/empty means "use
+    // the bundled engine submodule", today's default behavior.
+    public string? EnginePath { get; set; }
 }

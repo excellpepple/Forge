@@ -15,12 +15,12 @@
                  correctly before ThemeService.ApplyAndWatch() runs on startup;
                  ThemeService replaces every one of these at runtime. Keep in sync
                  with ThemeSettings' own defaults. -->
-            <SolidColorBrush x:Key="ForgeAccentBrush" Color="#D9681F" />
-            <SolidColorBrush x:Key="ForgeAccentSoftBrush" Color="#FCE8D8" />
+            <SolidColorBrush x:Key="ForgeAccentBrush" Color="#E8621A" />
+            <SolidColorBrush x:Key="ForgeAccentSoftBrush" Color="#FCE7DD" />
             <SolidColorBrush x:Key="ForgeOnAccentBrush" Color="#FFFFFF" />
             <SolidColorBrush x:Key="ForgeBackgroundBrush" Color="#F7F5F2" />
             <SolidColorBrush x:Key="ForgeSidebarBackgroundBrush" Color="#F0ECE5" />
-            <SolidColorBrush x:Key="ForgeIconBrush" Color="#D9681F" />
+            <SolidColorBrush x:Key="ForgeIconBrush" Color="#E8621A" />
             <SolidColorBrush x:Key="ForgeMatchBrush" Color="#0F6E56" />
             <SolidColorBrush x:Key="ForgeMatchBgBrush" Color="#E1F5EE" />
             <SolidColorBrush x:Key="ForgeWarnBrush" Color="#8A5A0B" />

@@ -126,7 +126,7 @@ public sealed class PowerShellHost : IDisposable
     public async Task<List<DocEntry>> GetProjectDocsAsync()
     {
         var results = await InvokeAsync(ps => ps.AddCommand("Get-ProjectDocs"));
-        return results.Select(r => ConvertFrom<DocEntry>(r)).ToList();
+        return results.Where(r => r != null).Select(r => ConvertFrom<DocEntry>(r)).ToList();
     }
 
     public async Task<BranchWatchStatus> GetBranchWatchStatusAsync(string path, string watchBranch)
@@ -151,6 +151,7 @@ public sealed class PowerShellHost : IDisposable
         payload.Properties.Add(new PSNoteProperty("WatchBranches", watchBranches));
         payload.Properties.Add(new PSNoteProperty("EnableLfsLocking", (object?)settings.EnableLfsLocking));
         payload.Properties.Add(new PSNoteProperty("NotifyOnUnlock", settings.NotifyOnUnlock.ToArray()));
+        payload.Properties.Add(new PSNoteProperty("EnginePath", (object?)settings.EnginePath));
         return InvokeAsync(ps => ps.AddCommand("Set-WorkflowLocalSettings").AddParameter("Settings", payload));
     }
 
@@ -206,9 +207,10 @@ public sealed class PowerShellHost : IDisposable
         return new ForgeUnexpectedException(ex.Message, ex);
     }
 
-    private static T ConvertFrom<T>(PSObject obj) where T : new()
+    private static T ConvertFrom<T>(PSObject? obj) where T : new()
     {
         var result = new T();
+        if (obj == null) return result;
         foreach (var prop in typeof(T).GetProperties())
         {
             var psProp = obj.Properties[prop.Name];
@@ -224,6 +226,10 @@ public sealed class PowerShellHost : IDisposable
             else if (prop.PropertyType == typeof(int))
             {
                 prop.SetValue(result, Convert.ToInt32(psProp.Value));
+            }
+            else if (prop.PropertyType == typeof(bool))
+            {
+                prop.SetValue(result, Convert.ToBoolean(psProp.Value));
             }
             else
             {
@@ -249,6 +255,9 @@ public sealed class PowerShellHost : IDisposable
 
         if (obj.Properties["NotifyOnUnlock"]?.Value is IEnumerable notifyList and not string)
             result.NotifyOnUnlock = notifyList.Cast<object>().Select(o => o?.ToString() ?? "").Where(s => s.Length > 0).ToList();
+
+        var enginePathValue = obj.Properties["EnginePath"]?.Value?.ToString();
+        if (!string.IsNullOrEmpty(enginePathValue)) result.EnginePath = enginePathValue;
 
         return result;
     }

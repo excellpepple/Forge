@@ -1,11 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -44,6 +47,16 @@ public partial class MainWindow : FluentWindow
     private FileTreeNode? _selectedFileNode;
     private readonly HashSet<string> _checkedFiles = new();
 
+    private readonly ObservableCollection<LogEntry> _logEntries = new();
+    private readonly ICollectionView _logView;
+    private string _logFilter = "All";
+
+    // Set while a cancelable Build is running -- see CancelBuildButton_Click
+    // and ProcessTreeKiller's header comment for why a build needs this
+    // instead of just stopping the PowerShell pipeline.
+    private HashSet<int>? _buildChildSnapshot;
+    private bool _buildCancelRequested;
+
     // Available branches per submodule path, fetched in the background
     // (project open + periodically) so the branch picker opens instantly
     // instead of making the user wait on a git call every time.
@@ -51,7 +64,6 @@ public partial class MainWindow : FluentWindow
     private readonly DispatcherTimer _branchRefreshTimer = new() { Interval = TimeSpan.FromMinutes(15) };
     private bool _branchPrefetchInFlight;
 
-    private readonly Control[] _busyGatedControls;
     private readonly Dictionary<string, Grid> _pages;
     private readonly Dictionary<string, Button> _navButtons;
     private string? _currentPage;
@@ -63,8 +75,13 @@ public partial class MainWindow : FluentWindow
         _theme = new ThemeService(this);
         _theme.ApplyAndWatch();
 
+        _logView = CollectionViewSource.GetDefaultView(_logEntries);
+        _logView.Filter = LogPassesFilter;
+        LogList.ItemsSource = _logView;
+
         _pages = new Dictionary<string, Grid>
         {
+            ["Welcome"] = WelcomePage,
             ["Overview"] = OverviewPage,
             ["Submodules"] = SubmodulesPage,
             ["Files"] = FilesPage,
@@ -86,13 +103,6 @@ public partial class MainWindow : FluentWindow
             ["Settings"] = SettingsNavButton
         };
 
-        _busyGatedControls = new Control[]
-        {
-            OpenProjectButton, RecentProjectsCombo,
-            QuickSyncButton, QuickBuildButton,
-            RefreshSubmodulesButton, SwitchBranchButton, SetWatchBranchButton, CheckUpdatesButton,
-            RunSyncButton, RunBuildButton
-        };
         _notifyBannerTimer.Tick += (_, _) =>
         {
             _notifyBannerTimer.Stop();
@@ -114,7 +124,7 @@ public partial class MainWindow : FluentWindow
         // Forge's own docs should be readable before any project is open --
         // only the Overview/Submodules/Build/Log tabs need a loaded project.
         PopulateHelpDocs();
-        ShowPage("Help");
+        ShowPage("Welcome");
 
         _ = AutoReopenLastProjectAsync();
     }
@@ -202,22 +212,50 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        SetBusy(true);
+        if (DeclineIfBusy()) return;
+
         HideBanner();
         _branchRefreshTimer.Stop();
+        _host?.Dispose();
+        _host = new PowerShellHost();
+        _host.OutputReceived += Host_OutputReceived;
+        _branchCache.Clear();
+        _checkedFiles.Clear();
+        _projectRoot = path;
+
+        // Fast path: paint instantly from the last successful load instead
+        // of sitting blank/disabled while PowerShell imports the module and
+        // git scans every repo -- that routinely takes several seconds on a
+        // project this size. The real refresh below always runs right after
+        // and overwrites this with current reality; this is only ever a
+        // first paint, never the source of truth.
+        var cache = ProjectCacheService.Load(path);
+        var didFastPaint = cache?.ProjectInfo != null;
+        if (didFastPaint)
+        {
+            _projectInfo = cache!.ProjectInfo;
+            BuildSubmodulesTree(cache.SubmoduleStates);
+            _allFiles = cache.Files;
+            UpdateFilesFilterButtons();
+            ApplyFilesFilter();
+            UpdateOverviewUi();
+            PopulateHistoryRepos();
+            SetProjectNavEnabled(true);
+            ShowPage("Overview");
+            ProjectTitleText.Text = _projectInfo!.Title;
+        }
+
+        AppSettingsService.AddRecent(path);
+        PopulateRecentProjects(path);
+
+        SetBusy(true);
+        SetStatus(didFastPaint ? "Refreshing project..." : "Opening project...", busy: true);
         try
         {
-            _host?.Dispose();
-            _host = new PowerShellHost();
-            _host.OutputReceived += Host_OutputReceived;
-            _branchCache.Clear();
-            _checkedFiles.Clear();
-
             await _host.ImportProjectAsync(path);
             _projectInfo = await _host.GetProjectInfoAsync();
             _localSettings = await _host.GetLocalSettingsAsync();
             _projectDocs = await _host.GetProjectDocsAsync();
-            _projectRoot = path;
 
             UpdateOverviewUi();
             await RefreshSubmodulesAsync();
@@ -227,12 +265,20 @@ public partial class MainWindow : FluentWindow
             UpdateFilesFilterButtons();
             await RefreshFilesAsync();
 
-            AppSettingsService.AddRecent(path);
-            PopulateRecentProjects(path);
-
             SetProjectNavEnabled(true);
-            ShowPage("Overview");
             ProjectTitleText.Text = _projectInfo.Title;
+            if (!didFastPaint) ShowPage("Overview"); // don't yank a fast-painted user back from wherever they navigated to
+
+            if (SubmodulesTree.ItemsSource is IEnumerable<SubmoduleNode> roots)
+            {
+                ProjectCacheService.Save(path, new Forge.Models.ProjectCache
+                {
+                    ProjectInfo = _projectInfo,
+                    SubmoduleStates = Flatten(roots).Select(n => n.State).ToList(),
+                    Files = _allFiles,
+                    CachedAt = DateTimeOffset.Now
+                });
+            }
 
             _ = PrefetchAllBranchesAsync(); // background; doesn't block opening the project
             _branchRefreshTimer.Start();
@@ -253,12 +299,31 @@ public partial class MainWindow : FluentWindow
 
     private void PopulateRecentProjects(string? select)
     {
+        var recent = AppSettingsService.Load().RecentProjects;
+
         _suppressRecentSelection = true;
         RecentProjectsCombo.Items.Clear();
-        foreach (var p in AppSettingsService.Load().RecentProjects)
+        foreach (var p in recent)
             RecentProjectsCombo.Items.Add(p);
         if (select != null) RecentProjectsCombo.SelectedItem = select;
         _suppressRecentSelection = false;
+
+        WelcomeRecentList.ItemsSource = recent;
+        WelcomeRecentHeader.Visibility = recent.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async void WelcomeRecentItem_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string path }) return;
+        await OpenProjectAsync(path);
+    }
+
+    private async void RegisterProjectButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DeclineIfBusy()) return;
+        var dialog = new RegisterProjectDialog { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.ResultProjectPath == null) return;
+        await OpenProjectAsync(dialog.ResultProjectPath);
     }
 
     private void UpdateOverviewUi()
@@ -275,9 +340,9 @@ public partial class MainWindow : FluentWindow
     // -----------------------------------------------------------------------
     // Theme (Settings page)
 
-    private static readonly string[] ColorPresets = { "#D9681F", "#B8860B", "#A3333D", "#3B6EA5", "#1F8A70", "#B5562E" };
+    private static readonly string[] ColorPresets = { "#E8621A", "#FF8A3D", "#B8860B", "#A3333D", "#3B6EA5", "#1F8A70" };
     private static readonly string[] LightBgPresets = { "#F7F5F2", "#F2F3F5", "#FFFFFF" };
-    private static readonly string[] DarkBgPresets = { "#121212", "#1C1A17", "#15181C" };
+    private static readonly string[] DarkBgPresets = { "#161412", "#1C1A17", "#15181C" };
 
     private void InitializeThemePickers()
     {
@@ -327,16 +392,26 @@ public partial class MainWindow : FluentWindow
     private void SettingsSubTab_Click(object sender, MouseButtonEventArgs e)
     {
         if (sender is not TextBlock { Tag: string tag }) return;
-        var showTheme = tag == "Theme";
-        ThemeTabContent.Visibility = showTheme ? Visibility.Visible : Visibility.Collapsed;
-        GeneralTabContent.Visibility = showTheme ? Visibility.Collapsed : Visibility.Visible;
+        ShowSettingsSubTab(tag);
+    }
 
-        ThemeSubTab.FontWeight = showTheme ? FontWeights.Medium : FontWeights.Normal;
-        GeneralSubTab.FontWeight = showTheme ? FontWeights.Normal : FontWeights.Medium;
-        if (showTheme) ThemeSubTab.SetResourceReference(ForegroundProperty, "ForgeAccentBrush");
-        else ThemeSubTab.ClearValue(ForegroundProperty);
-        if (!showTheme) GeneralSubTab.SetResourceReference(ForegroundProperty, "ForgeAccentBrush");
-        else GeneralSubTab.ClearValue(ForegroundProperty);
+    private void ShowSettingsSubTab(string tag)
+    {
+        var tabs = new (string Key, TextBlock Label, StackPanel Content)[]
+        {
+            ("Theme", ThemeSubTab, ThemeTabContent),
+            ("General", GeneralSubTab, GeneralTabContent),
+            ("Project", ProjectSubTab, ProjectTabContent)
+        };
+        foreach (var (key, label, content) in tabs)
+        {
+            var isActive = key == tag;
+            content.Visibility = isActive ? Visibility.Visible : Visibility.Collapsed;
+            label.FontWeight = isActive ? FontWeights.Medium : FontWeights.Normal;
+            if (isActive) label.SetResourceReference(ForegroundProperty, "ForgeAccentBrush");
+            else label.ClearValue(ForegroundProperty);
+        }
+        if (tag == "Project") PopulateProjectSettingsUi();
     }
 
     // -----------------------------------------------------------------------
@@ -367,15 +442,142 @@ public partial class MainWindow : FluentWindow
     }
 
     // -----------------------------------------------------------------------
+    // Project settings (Settings page): read-only project.config.json
+    // summary, plus the local (machine-specific, never shared) EnginePath
+    // override for a project that doesn't bundle its own engine submodule.
+
+    private void PopulateProjectSettingsUi()
+    {
+        if (_projectInfo == null) return;
+        ProjectSettingsTitleText.Text = _projectInfo.Title;
+        ProjectSettingsTargetText.Text = _projectInfo.EditorTarget;
+        ProjectSettingsRootText.Text = _projectInfo.Root;
+        EnginePathBox.Text = _localSettings.EnginePath ?? "";
+        UpdateEnginePathStatusText();
+    }
+
+    private void UpdateEnginePathStatusText()
+    {
+        EnginePathStatusText.Text = _projectInfo == null ? "" : _projectInfo.IsEngineExternal
+            ? $"Currently using an external engine at: {_projectInfo.EngineDir}"
+            : $"Currently using the bundled engine submodule at: {_projectInfo.EngineDir}";
+    }
+
+    private void BrowseEnginePath_Click(object sender, RoutedEventArgs e)
+    {
+        using var dialog = new System.Windows.Forms.FolderBrowserDialog
+        {
+            Description = "Select the folder containing Engine\\Binaries\\Win64\\UnrealEditor.exe",
+            UseDescriptionForTitle = true
+        };
+        if (Directory.Exists(EnginePathBox.Text)) dialog.SelectedPath = EnginePathBox.Text;
+
+        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            EnginePathBox.Text = dialog.SelectedPath;
+    }
+
+    private async void SaveEnginePath_Click(object sender, RoutedEventArgs e) => await SaveEnginePathAsync(EnginePathBox.Text.Trim());
+
+    private async void ClearEnginePath_Click(object sender, RoutedEventArgs e)
+    {
+        EnginePathBox.Text = "";
+        await SaveEnginePathAsync("");
+    }
+
+    private async Task SaveEnginePathAsync(string path)
+    {
+        if (_host == null || _projectRoot == null) return;
+
+        if (path.Length > 0)
+        {
+            var editorExe = Path.Combine(path, "Engine", "Binaries", "Win64", "UnrealEditor.exe");
+            if (!File.Exists(editorExe))
+            {
+                var proceed = MessageBox.Show(this,
+                    $"Couldn't find UnrealEditor.exe under:\n{path}\n\nSave anyway?",
+                    "Forge", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                if (proceed != MessageBoxResult.Yes) return;
+            }
+        }
+
+        _localSettings.EnginePath = path.Length > 0 ? path : null;
+        try
+        {
+            await _host.SetLocalSettingsAsync(_localSettings);
+        }
+        catch (ForgeWorkflowException ex) { ShowBanner(ex.Message); return; }
+        catch (ForgeUnexpectedException ex) { ShowBanner($"Unexpected error: {ex.Message}"); return; }
+
+        // EngineDir is computed when ProjectWorkflow.psm1 is imported --
+        // reopen the project so the change takes effect immediately rather
+        // than telling the user to restart Forge. OpenProjectAsync manages
+        // its own busy/status state, including declining if something else
+        // is already running.
+        await OpenProjectAsync(_projectRoot);
+        ShowPage("Settings"); // OpenProjectAsync's fast-paint lands on Overview; bring the user back to where they were
+        ShowSettingsSubTab("Project");
+    }
+
+    // -----------------------------------------------------------------------
     // Output / log / failure banner
 
     private void Host_OutputReceived(object? sender, HostOutputEventArgs e)
     {
-        Dispatcher.Invoke(() =>
+        var level = LogEntry.Classify(e.Stream, e.Foreground);
+        Dispatcher.Invoke(() => AppendLog(e.Text, level));
+    }
+
+    // A single Write/WriteLine call's text can itself contain embedded
+    // newlines (or none at all, or just a blank separator line the module
+    // writes before each step) -- split it so every row in the Log list is
+    // exactly one line, and drop blank ones since the Step row's own top
+    // margin already provides that visual separation.
+    private void AppendLog(string text, LogLevel level)
+    {
+        foreach (var line in text.Split('\n'))
         {
-            LogText.AppendText(e.Text);
-            LogText.ScrollToEnd();
-        });
+            var trimmed = line.TrimEnd('\r');
+            if (trimmed.Length == 0) continue;
+            _logEntries.Add(new LogEntry(trimmed, level));
+        }
+        if (LogList.Items.Count > 0) LogList.ScrollIntoView(LogList.Items[^1]);
+    }
+
+    private void LogFilter_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string tag }) return;
+        _logFilter = tag;
+        UpdateLogFilterButtons();
+        _logView.Refresh();
+    }
+
+    private void UpdateLogFilterButtons()
+    {
+        var buttons = new[] { (LogFilterAllButton, "All"), (LogFilterWarnButton, "Warnings"), (LogFilterErrorButton, "Errors") };
+        foreach (var (button, tag) in buttons)
+        {
+            var isActive = _logFilter == tag;
+            if (isActive) button.SetResourceReference(BackgroundProperty, "ForgeAccentSoftBrush");
+            else button.ClearValue(BackgroundProperty);
+            button.SetResourceReference(ForegroundProperty, isActive ? "ForgeAccentBrush" : "TextFillColorPrimaryBrush");
+        }
+    }
+
+    private void LogSearchBox_TextChanged(object sender, TextChangedEventArgs e) => _logView.Refresh();
+
+    private bool LogPassesFilter(object obj)
+    {
+        if (obj is not LogEntry entry) return false;
+        var passesLevel = _logFilter switch
+        {
+            "Warnings" => entry.Level == LogLevel.Warning,
+            "Errors" => entry.Level == LogLevel.Error,
+            _ => true
+        };
+        if (!passesLevel) return false;
+
+        var search = LogSearchBox.Text.Trim();
+        return search.Length == 0 || entry.Text.Contains(search, StringComparison.OrdinalIgnoreCase);
     }
 
     private void ShowBanner(string message)
@@ -405,7 +607,7 @@ public partial class MainWindow : FluentWindow
 
     private void DismissNotifyBanner_Click(object sender, RoutedEventArgs e) => NotifyBanner.Visibility = Visibility.Collapsed;
 
-    private void ClearLogButton_Click(object sender, RoutedEventArgs e) => LogText.Clear();
+    private void ClearLogButton_Click(object sender, RoutedEventArgs e) => _logEntries.Clear();
 
     // -----------------------------------------------------------------------
     // Submodules tab
@@ -414,14 +616,19 @@ public partial class MainWindow : FluentWindow
     {
         if (_host == null) return;
         var flat = await _host.GetSubmoduleStatesAsync();
-        var tree = SubmoduleNode.BuildTree(flat);
+        BuildSubmodulesTree(flat);
+    }
 
+    // Split out of RefreshSubmodulesAsync so the project-open fast path can
+    // build the same tree from cached states, without a live PowerShell call.
+    private void BuildSubmodulesTree(List<SubmoduleState> flat)
+    {
+        var tree = SubmoduleNode.BuildTree(flat);
         foreach (var node in Flatten(tree))
         {
             if (_localSettings.WatchBranches.TryGetValue(node.State.Path, out var branch))
                 node.SetWatchBranch(branch);
         }
-
         SubmodulesTree.ItemsSource = tree;
     }
 
@@ -715,10 +922,12 @@ public partial class MainWindow : FluentWindow
 
     private async Task RunSync(IEnumerable<string>? only)
     {
+        if (DeclineIfBusy()) return;
         if (!await CheckStaleLocksBeforeSyncAsync()) return;
 
         ShowPage("Log");
         SetBusy(true);
+        SetStatus("Syncing...", busy: true);
         try
         {
             await _host!.InvokeSyncAsync(only);
@@ -783,15 +992,48 @@ public partial class MainWindow : FluentWindow
 
     private async Task RunBuild(bool noBuild, bool buildOnly, bool rebuild, string configuration, bool skipSyncCheck)
     {
+        if (DeclineIfBusy()) return;
+
         ShowPage("Log");
         SetBusy(true);
+        SetStatus(noBuild ? "Launching editor..." : "Building...", busy: true);
+        _buildCancelRequested = false;
+        _buildChildSnapshot = noBuild ? null : ProcessTreeKiller.SnapshotChildPids();
+        CancelBuildButton.Visibility = _buildChildSnapshot != null ? Visibility.Visible : Visibility.Collapsed;
         try
         {
             await _host!.InvokeBuildAsync(noBuild, buildOnly, rebuild, configuration, skipSyncCheck);
         }
-        catch (ForgeWorkflowException ex) { ShowBanner(ex.Message); }
+        catch (ForgeWorkflowException ex)
+        {
+            if (_buildCancelRequested) ShowNotifyBanner("Build canceled.");
+            else ShowBanner(ex.Message);
+        }
         catch (ForgeUnexpectedException ex) { ShowBanner($"Unexpected error: {ex.Message}"); }
-        finally { SetBusy(false); }
+        finally
+        {
+            SetBusy(false);
+            CancelBuildButton.Visibility = Visibility.Collapsed;
+            _buildChildSnapshot = null;
+        }
+    }
+
+    // Kills the compiler process tree this build spawned -- see
+    // ProcessTreeKiller's header comment for why ps.Stop() alone can't do
+    // this. Left half-finished build output is safe: running Build again
+    // just resumes the incremental build from where it stopped.
+    private async void CancelBuildButton_Click(object sender, RoutedEventArgs e)
+    {
+        // Captured locally -- RunBuild's finally clears the field on the UI
+        // thread once the build finishes, which could otherwise race with
+        // Task.Run reading it from a background thread.
+        var snapshot = _buildChildSnapshot;
+        if (snapshot == null) return;
+        _buildCancelRequested = true;
+        AppendLog("Canceling build...", LogLevel.Warning);
+        CancelBuildButton.IsEnabled = false;
+        try { await Task.Run(() => ProcessTreeKiller.KillNewChildren(snapshot)); }
+        finally { CancelBuildButton.IsEnabled = true; }
     }
 
     private void HousekeepingButton_Click(object sender, RoutedEventArgs e)
@@ -837,6 +1079,12 @@ public partial class MainWindow : FluentWindow
     {
         if (_projectInfo == null) return;
 
+        // Only claim the status bar if nothing else already has it -- this
+        // runs inside Submit/project-open too, and shouldn't stomp their
+        // own, more specific message.
+        var standalone = !_isBusy;
+        if (standalone) SetStatus("Refreshing files...", busy: true);
+
         var repos = GetFileScanRepos().ToList();
         var includeLocks = IsLfsLockingEnabled();
         var results = await Task.WhenAll(repos.Select(r => _gitCli.GetFileStatesAsync(r.RepoPath, r.AbsoluteDir, includeLocks)));
@@ -859,6 +1107,8 @@ public partial class MainWindow : FluentWindow
         ApplyFilesFilter();
         await UpdateYourStuffSummaryAsync();
         await CheckNotifyOnUnlockAsync();
+
+        if (standalone) SetStatus("Ready", busy: false);
     }
 
     // Fires a toast for every watched path (see NotifyOnUnlockButton_Click)
@@ -1234,6 +1484,7 @@ public partial class MainWindow : FluentWindow
     private async void SubmitButton_Click(object sender, RoutedEventArgs e)
     {
         if (_host == null || _projectInfo == null || _checkedFiles.Count == 0) return;
+        if (DeclineIfBusy()) return;
 
         var checkedEntries = _allFiles.Where(f => _checkedFiles.Contains(f.FullPath)).ToList();
         var repoPaths = checkedEntries.Select(f => f.RepoPath).Distinct().ToList();
@@ -1287,17 +1538,18 @@ public partial class MainWindow : FluentWindow
 
         ShowPage("Log");
         SetBusy(true);
+        SetStatus($"Submitting {repoLabel}...", busy: true);
         try
         {
-            LogText.AppendText($"Submitting {relativePaths.Count} file(s) in {repoLabel}...\n");
+            AppendLog($"Submitting {relativePaths.Count} file(s) in {repoLabel}...", LogLevel.Step);
             await _gitCli.CommitPathsAsync(repoDir, relativePaths, message);
             await _gitCli.PushAsync(repoDir);
-            LogText.AppendText($"Committed and pushed {repoLabel}.\n");
+            AppendLog($"Committed and pushed {repoLabel}.", LogLevel.Success);
 
             foreach (var file in checkedEntries.Where(f => f.LockOwner != null && f.IsLockedByMe))
             {
                 try { await _gitCli.UnlockAsync(repoDir, file.RelativePath); }
-                catch (Exception ex) { LogText.AppendText($"Could not unlock '{file.RelativePath}': {ex.Message}\n"); }
+                catch (Exception ex) { AppendLog($"Could not unlock '{file.RelativePath}': {ex.Message}", LogLevel.Warning); }
             }
 
             var childSha = await _gitCli.GetHeadShaAsync(repoDir);
@@ -1310,14 +1562,14 @@ public partial class MainWindow : FluentWindow
                 await _gitCli.CommitPathsAsync(step.ParentAbsoluteDir, new[] { step.RelativePathInParent }, pinMessage);
                 await _gitCli.PushAsync(step.ParentAbsoluteDir);
                 var parentLabel = string.IsNullOrEmpty(step.ParentRepoPath) ? "(superproject)" : step.ParentRepoPath;
-                LogText.AppendText($"Bumped {childName} pin in {parentLabel} and pushed.\n");
+                AppendLog($"Bumped {childName} pin in {parentLabel} and pushed.", LogLevel.Success);
 
                 repoDir = step.ParentAbsoluteDir; // GetHeadCommitSubjectAsync above read the PREVIOUS level's HEAD
                 childSha = await _gitCli.GetHeadShaAsync(step.ParentAbsoluteDir);
             }
 
             foreach (var path in checkedEntries.Select(f => f.FullPath)) _checkedFiles.Remove(path);
-            LogText.AppendText("Submit complete.\n");
+            AppendLog("Submit complete.", LogLevel.Success);
 
             await RefreshSubmodulesAsync();
             await RefreshFilesAsync();
@@ -1531,7 +1783,8 @@ public partial class MainWindow : FluentWindow
     // configurable Docs list, which comes from project.config.json.
     private static readonly DocEntry[] ForgeDocs =
     {
-        new() { Title = "Using Forge", Path = "docs/using-forge.md", Type = "markdown", IsBuiltIn = true }
+        new() { Title = "Using Forge", Path = "docs/using-forge.md", Type = "markdown", IsBuiltIn = true },
+        new() { Title = "Projects & Settings", Path = "docs/projects-and-settings.md", Type = "markdown", IsBuiltIn = true }
     };
 
     private sealed class HelpListEntry
@@ -1687,9 +1940,35 @@ public partial class MainWindow : FluentWindow
 
     // -----------------------------------------------------------------------
 
+    // Buttons deliberately stay clickable while busy (no IsEnabled=false
+    // sweep) -- PowerShellHost already serializes every call through its own
+    // gate, so a second click can't corrupt anything; it would just queue.
+    // What changed is only the *feedback*: SetStatus below is what tells the
+    // user something's running, and the few actions where queuing would be
+    // confusing (Sync/Build/Submit) check _isBusy themselves and decline
+    // with a message instead of silently queuing.
+    private bool _isBusy;
+
     private void SetBusy(bool busy)
     {
-        foreach (var control in _busyGatedControls)
-            control.IsEnabled = !busy;
+        _isBusy = busy;
+        if (!busy) SetStatus("Ready", busy: false);
+    }
+
+    private void SetStatus(string message, bool busy)
+    {
+        StatusText.Text = message;
+        StatusProgressBar.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    // Used by handlers that intentionally refuse to run concurrently with
+    // another long operation (Sync/Build/Submit), rather than letting
+    // PowerShellHost's gate silently queue them -- queuing a Submit behind
+    // an in-flight Sync, say, could land with stale file state.
+    private bool DeclineIfBusy()
+    {
+        if (!_isBusy) return false;
+        ShowNotifyBanner($"Still working: {StatusText.Text}. Try again in a moment.");
+        return true;
     }
 }

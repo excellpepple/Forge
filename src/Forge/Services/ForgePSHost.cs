@@ -14,10 +14,18 @@ public sealed class HostOutputEventArgs : EventArgs
 {
     public string Text { get; }
     public HostOutputStream Stream { get; }
-    public HostOutputEventArgs(string text, HostOutputStream stream)
+
+    // The module's own Write-Step/Write-Ok/Write-Warn/Write-Dim helpers
+    // already pick a ConsoleColor per call (see ProjectWorkflow.psm1) --
+    // carrying it through lets the Log tab color/classify each line the
+    // same way the module intended, instead of guessing from its text.
+    public ConsoleColor? Foreground { get; }
+
+    public HostOutputEventArgs(string text, HostOutputStream stream, ConsoleColor? foreground = null)
     {
         Text = text;
         Stream = stream;
+        Foreground = foreground;
     }
 }
 
@@ -31,13 +39,13 @@ public sealed class ForgeHostUserInterface : PSHostUserInterface
 
     public override PSHostRawUserInterface RawUI { get; } = new ForgeHostRawUserInterface();
 
-    private void Raise(string text, HostOutputStream stream) => OutputReceived?.Invoke(this, new HostOutputEventArgs(text, stream));
+    private void Raise(string text, HostOutputStream stream, ConsoleColor? foreground = null) => OutputReceived?.Invoke(this, new HostOutputEventArgs(text, stream, foreground));
 
     public override void Write(string value) => Raise(value, HostOutputStream.Host);
-    public override void Write(ConsoleColor foregroundColor, ConsoleColor backgroundColor, string value) => Raise(value, HostOutputStream.Host);
+    public override void Write(ConsoleColor foregroundColor, ConsoleColor backgroundColor, string value) => Raise(value, HostOutputStream.Host, foregroundColor);
     public override void WriteLine(string value) => Raise(value + Environment.NewLine, HostOutputStream.Host);
     public override void WriteLine() => Raise(Environment.NewLine, HostOutputStream.Host);
-    public override void WriteLine(ConsoleColor foregroundColor, ConsoleColor backgroundColor, string value) => Raise(value + Environment.NewLine, HostOutputStream.Host);
+    public override void WriteLine(ConsoleColor foregroundColor, ConsoleColor backgroundColor, string value) => Raise(value + Environment.NewLine, HostOutputStream.Host, foregroundColor);
     public override void WriteErrorLine(string value) => Raise(value + Environment.NewLine, HostOutputStream.Error);
     public override void WriteWarningLine(string value) => Raise(value + Environment.NewLine, HostOutputStream.Warning);
     public override void WriteVerboseLine(string value) => Raise(value + Environment.NewLine, HostOutputStream.Verbose);

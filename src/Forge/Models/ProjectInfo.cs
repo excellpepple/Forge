@@ -20,4 +20,9 @@ public sealed class ProjectInfo
     public string EditorTarget { get; set; } = "";
     public string EditorExe { get; set; } = "";
     public string[] LfsRepos { get; set; } = Array.Empty<string>();
+
+    // True when a local EnginePath override (Tools/.workflow-local.json,
+    // machine-specific, never shared) is in effect instead of the bundled
+    // engine submodule.
+    public bool IsEngineExternal { get; set; }
 }

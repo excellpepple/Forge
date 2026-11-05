@@ -11,6 +11,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.3.12" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <PackageReference Include="System.Management" Version="7.0.2" />
     <PackageReference Include="WPF-UI" Version="3.0.5" />
   </ItemGroup>
 
@@ -19,6 +20,16 @@
        read from disk the same way a project's own docs do. -->
   <ItemGroup>
     <None Include="docs\**\*.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- Bundled scaffold template for "Register a Project": a canonical,
+       already project-agnostic copy of ProjectWorkflow.psm1 (synced from
+       CORE-Super, the first project built against it), copied into a new
+       project's Tools\ folder when it doesn't have the module yet. -->
+  <ItemGroup>
+    <None Include="templates\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

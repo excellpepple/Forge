@@ -6,6 +6,7 @@
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:views="clr-namespace:Forge.Views"
+        xmlns:conv="clr-namespace:Forge.Converters"
         mc:Ignorable="d"
         Title="Forge" Height="720" Width="1150" MinHeight="500" MinWidth="800"
         ExtendsContentIntoTitleBar="True"
@@ -15,6 +16,7 @@
 
     <ui:FluentWindow.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:EmptyStringToVisibilityConverter x:Key="EmptyToCollapsed"/>
         <Style x:Key="NavButtonStyle" TargetType="Button">
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="Padding" Value="14,9"/>
@@ -137,6 +139,7 @@
         <Style x:Key="FileTreeItemStyle" TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
             <Setter Property="ContextMenu" Value="{StaticResource FileContextMenu}"/>
+            <Setter Property="Padding" Value="2,1"/>
             <EventSetter Event="MouseRightButtonDown" Handler="TreeItem_MouseRightButtonDown"/>
         </Style>
     </ui:FluentWindow.Resources>
@@ -146,6 +149,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <ui:TitleBar Grid.Row="0" x:Name="AppTitleBar" Title="Forge">
@@ -200,6 +204,9 @@
                         <Button x:Name="OpenProjectButton" Content="Open Project..." Padding="10,6" Margin="0,0,0,8"
                                 Click="OpenProjectButton_Click" HorizontalAlignment="Stretch"
                                 ToolTip="Pick a folder containing Tools\ProjectWorkflow.psm1 and project.config.json."/>
+                        <Button Content="Register a Project..." Padding="10,6" Margin="0,0,0,8"
+                                Click="RegisterProjectButton_Click" HorizontalAlignment="Stretch"
+                                ToolTip="Point Forge at an Unreal project folder that isn't set up for Forge yet."/>
                         <ComboBox x:Name="RecentProjectsCombo" HorizontalAlignment="Stretch"
                                   SelectionChanged="RecentProjectsCombo_SelectionChanged"
                                   ToolTip="Projects you've opened before. Pick one to reopen it."/>
@@ -454,16 +461,36 @@
                                   VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
                             <TreeView.ItemTemplate>
                                 <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                    <StackPanel Orientation="Horizontal" Margin="0,2">
-                                        <CheckBox IsChecked="{Binding IsChecked, Mode=OneWay}" Click="FileCheck_Click"
+                                    <DockPanel MinHeight="24">
+                                        <CheckBox DockPanel.Dock="Left" IsChecked="{Binding IsChecked, Mode=OneWay}" Click="FileCheck_Click"
                                                   Visibility="{Binding IsFile, Converter={StaticResource BoolToVis}}"
-                                                  Width="22" VerticalAlignment="Center"
+                                                  Width="18" VerticalAlignment="Center" Margin="0,0,2,0"
                                                   ToolTip="Check to include this file in the next Submit."/>
-                                        <TextBlock Text="{Binding Name}" Width="260" Margin="0,0,10,0" TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Text="{Binding StatusText}" Width="80" Margin="0,0,10,0" Foreground="{Binding StatusBrush}"/>
-                                        <TextBlock Text="{Binding LockText}" Width="150" Margin="0,0,10,0" Opacity="0.75"/>
-                                        <TextBlock Text="{Binding DownloadText}" Opacity="0.75"/>
-                                    </StackPanel>
+                                        <ui:SymbolIcon DockPanel.Dock="Left" VerticalAlignment="Center" Margin="2,0,7,0"
+                                                       FontSize="14" Opacity="0.5" Foreground="{DynamicResource ForgeIconBrush}">
+                                            <ui:SymbolIcon.Style>
+                                                <Style TargetType="ui:SymbolIcon">
+                                                    <Setter Property="Symbol" Value="Folder24"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsFile}" Value="True">
+                                                            <Setter Property="Symbol" Value="DocumentText24"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:SymbolIcon.Style>
+                                        </ui:SymbolIcon>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding DownloadText}" FontSize="11" Opacity="0.6"
+                                                   VerticalAlignment="Center" Margin="10,0,0,0"
+                                                   Visibility="{Binding DownloadText, Converter={StaticResource EmptyToCollapsed}}"/>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding LockText}" FontSize="11" Opacity="0.6"
+                                                   VerticalAlignment="Center" Margin="10,0,0,0"
+                                                   Visibility="{Binding LockText, Converter={StaticResource EmptyToCollapsed}}"/>
+                                        <Border DockPanel.Dock="Right" Margin="10,0,0,0" VerticalAlignment="Center" CornerRadius="4" Padding="7,2"
+                                                Background="{Binding StatusBgBrush}" Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="{Binding StatusText}" FontSize="10.5" FontWeight="SemiBold" Foreground="{Binding StatusBrush}"/>
+                                        </Border>
+                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontSize="13" TextTrimming="CharacterEllipsis"/>
+                                    </DockPanel>
                                 </HierarchicalDataTemplate>
                             </TreeView.ItemTemplate>
                         </TreeView>
@@ -559,18 +586,107 @@
                     </StackPanel>
                 </Grid>
 
-                <Grid x:Name="LogPage" Visibility="Collapsed" Margin="16">
+                <Grid x:Name="LogPage" Visibility="Collapsed" Margin="24">
                     <DockPanel>
-                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                            <Button x:Name="ClearLogButton" Content="Clear" Padding="10,4" Click="ClearLogButton_Click"
-                                    ToolTip="Clear this log view. Doesn't affect anything that already happened."/>
-                        </StackPanel>
-                        <TextBox x:Name="LogText" IsReadOnly="True" FontFamily="Consolas" FontSize="12"
-                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                 TextWrapping="NoWrap"
-                                 Background="{DynamicResource ForgeSidebarBackgroundBrush}"
-                                 Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                        <Border DockPanel.Dock="Top" Style="{StaticResource ToolbarCardStyle}" Margin="0,0,0,14">
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="LogFilterAllButton" Content="All" Style="{StaticResource SegButtonStyle}" Click="LogFilter_Click" Tag="All"/>
+                                <Button x:Name="LogFilterWarnButton" Content="Warnings" Style="{StaticResource SegButtonStyle}" Click="LogFilter_Click" Tag="Warnings"/>
+                                <Button x:Name="LogFilterErrorButton" Content="Errors" Style="{StaticResource SegButtonStyle}" Click="LogFilter_Click" Tag="Errors"/>
+                                <TextBox x:Name="LogSearchBox" Width="220" Margin="16,0,0,0" VerticalContentAlignment="Center"
+                                         TextChanged="LogSearchBox_TextChanged" ToolTip="Filter log lines by text."/>
+                                <Button x:Name="ClearLogButton" Style="{StaticResource ToolbarButtonStyle}" Click="ClearLogButton_Click" Margin="16,0,0,0"
+                                        ToolTip="Clear this log view. Doesn't affect anything that already happened.">
+                                    <TextBlock Text="Clear"/>
+                                </Button>
+                                <Button x:Name="CancelBuildButton" Click="CancelBuildButton_Click" Margin="16,0,0,0" Padding="10,5"
+                                        Visibility="Collapsed" Background="{DynamicResource ForgeDangerFillBrush}" Foreground="{DynamicResource ForgeOnDangerBrush}"
+                                        ToolTip="Force-stop the compiler. The build is left half-finished -- running Build again just resumes it.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="Alert24" Margin="0,0,6,0" Foreground="{DynamicResource ForgeOnDangerBrush}"/>
+                                        <TextBlock Text="Cancel Build"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                        <Border Background="{DynamicResource ForgeSidebarBackgroundBrush}" BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                                BorderThickness="1" CornerRadius="8">
+                            <ListBox x:Name="LogList" Background="Transparent" BorderThickness="0" Padding="6"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                                     VirtualizingPanel.ScrollUnit="Pixel" SelectionMode="Extended">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="Padding" Value="8,1"/>
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ListBoxItem">
+                                                    <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                                        <ContentPresenter/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsSelected" Value="True">
+                                                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Left" Text="{Binding TimeText}" FontFamily="Consolas" FontSize="11"
+                                                       Opacity="0.4" Width="56" Margin="0,0,8,0"/>
+                                            <TextBlock Text="{Binding Text}" FontFamily="Consolas" FontSize="12" TextWrapping="NoWrap"
+                                                       Foreground="{Binding Brush}" Opacity="{Binding TextOpacity}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsHeading}" Value="True">
+                                                                <Setter Property="FontWeight" Value="Bold"/>
+                                                                <Setter Property="Margin" Value="0,8,0,2"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
                     </DockPanel>
+                </Grid>
+
+                <Grid x:Name="WelcomePage" Visibility="Collapsed">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="440">
+                        <ui:SymbolIcon Symbol="Fire24" FontSize="44" HorizontalAlignment="Center" Margin="0,0,0,12"
+                                       Foreground="{DynamicResource ForgeAccentBrush}"/>
+                        <TextBlock Text="Forge" FontSize="30" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,6"/>
+                        <TextBlock Text="Sync, build and manage your Unreal project's Git/LFS workflow without the command line."
+                                   TextWrapping="Wrap" TextAlignment="Center" Opacity="0.7" Margin="0,0,0,28"/>
+
+                        <Button Content="Open Project..." Height="38" Click="OpenProjectButton_Click"
+                                Background="{DynamicResource ForgeAccentBrush}" Foreground="{DynamicResource ForgeOnAccentBrush}" Margin="0,0,0,10"
+                                ToolTip="Pick a folder that's already set up for Forge."/>
+                        <Button Content="Register a Project..." Height="38" Click="RegisterProjectButton_Click" Margin="0,0,0,28"
+                                ToolTip="Point Forge at an Unreal project folder that isn't set up yet."/>
+
+                        <TextBlock x:Name="WelcomeRecentHeader" Text="RECENT" FontSize="11" Opacity="0.5" Margin="0,0,0,8" Visibility="Collapsed"/>
+                        <ItemsControl x:Name="WelcomeRecentList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Margin="0,0,0,6"
+                                            MouseLeftButtonUp="WelcomeRecentItem_Click" Cursor="Hand" Tag="{Binding}">
+                                        <TextBlock Text="{Binding}" Padding="12,10" TextTrimming="CharacterEllipsis"/>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
                 </Grid>
 
                 <Grid x:Name="HelpPage" Visibility="Collapsed" Margin="16">
@@ -603,8 +719,10 @@
                             <TextBlock x:Name="ThemeSubTab" Text="Theme" FontWeight="Medium" Margin="0,0,20,0" Cursor="Hand"
                                        MouseLeftButtonUp="SettingsSubTab_Click" Tag="Theme"
                                        Foreground="{DynamicResource ForgeAccentBrush}"/>
-                            <TextBlock x:Name="GeneralSubTab" Text="General" Cursor="Hand"
+                            <TextBlock x:Name="GeneralSubTab" Text="General" Margin="0,0,20,0" Cursor="Hand"
                                        MouseLeftButtonUp="SettingsSubTab_Click" Tag="General"/>
+                            <TextBlock x:Name="ProjectSubTab" Text="Project" Cursor="Hand"
+                                       MouseLeftButtonUp="SettingsSubTab_Click" Tag="Project"/>
                         </StackPanel>
 
                         <StackPanel x:Name="ThemeTabContent">
@@ -639,10 +757,59 @@
                             <CheckBox x:Name="EnableLfsLockingCheck" Content="Enable Git LFS lock management" Click="EnableLfsLockingCheck_Click"/>
                             <TextBlock x:Name="LfsAutoDetectNote" FontSize="11" Opacity="0.6" Margin="24,6,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
+
+                        <StackPanel x:Name="ProjectTabContent" Visibility="Collapsed">
+                            <TextBlock Text="This project" FontWeight="Medium" Margin="0,0,0,10"/>
+                            <Grid Margin="0,0,0,20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Title" Opacity="0.6" FontSize="12" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="ProjectSettingsTitleText" Grid.Row="0" Grid.Column="1" TextTrimming="CharacterEllipsis" Margin="0,4"/>
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Editor target" Opacity="0.6" FontSize="12" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="ProjectSettingsTargetText" Grid.Row="1" Grid.Column="1" TextTrimming="CharacterEllipsis" Margin="0,4"/>
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Folder" Opacity="0.6" FontSize="12" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="ProjectSettingsRootText" Grid.Row="2" Grid.Column="1" TextTrimming="CharacterEllipsis" Margin="0,4"/>
+                            </Grid>
+
+                            <TextBlock Text="Engine location" FontWeight="Medium" Margin="0,0,0,6"/>
+                            <TextBlock TextWrapping="Wrap" Opacity="0.7" FontSize="12" Margin="0,0,0,10"
+                                       Text="By default Forge uses this project's bundled engine submodule. If this project doesn't distribute its own engine, point Forge at one installed elsewhere (Epic Games Launcher, a custom build). Personal to this machine -- never shared or committed."/>
+                            <DockPanel Margin="0,0,0,6">
+                                <Button Content="Browse..." DockPanel.Dock="Right" Padding="12,4" Margin="8,0,0,0" Click="BrowseEnginePath_Click"/>
+                                <TextBox x:Name="EnginePathBox" ToolTip="Folder containing Engine\Binaries\Win64\UnrealEditor.exe. Leave blank to use the bundled engine submodule."/>
+                            </DockPanel>
+                            <TextBlock x:Name="EnginePathStatusText" FontSize="11" Opacity="0.6" Margin="0,0,0,12" TextWrapping="Wrap"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="SaveEnginePathButton" Content="Save" Width="90" Margin="0,0,8,0" Click="SaveEnginePath_Click"
+                                        Background="{DynamicResource ForgeAccentBrush}" Foreground="{DynamicResource ForgeOnAccentBrush}"/>
+                                <Button Content="Clear" Width="90" Click="ClearEnginePath_Click"
+                                        ToolTip="Go back to using the bundled engine submodule."/>
+                            </StackPanel>
+                        </StackPanel>
                     </StackPanel>
                 </Grid>
 
             </Grid>
         </Grid>
+
+        <!-- Status bar: current background activity (project load/refresh,
+             Sync, Build, Submit, etc) plus an indeterminate progress
+             indicator. Buttons stay clickable while this is busy, see
+             SetBusy/SetStatus. -->
+        <Border Grid.Row="3" Background="{DynamicResource ForgeSidebarBackgroundBrush}"
+                BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,1,0,0" Padding="12,5">
+            <DockPanel>
+                <ProgressBar x:Name="StatusProgressBar" DockPanel.Dock="Right" IsIndeterminate="True"
+                             Width="110" Height="4" Margin="10,0,0,0" Visibility="Collapsed"/>
+                <TextBlock x:Name="StatusText" Text="Ready" Opacity="0.7" FontSize="12" VerticalAlignment="Center"/>
+            </DockPanel>
+        </Border>
     </Grid>
 </ui:FluentWindow>
